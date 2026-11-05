@@ -11,6 +11,7 @@ import {
   FileArchive,
   Check,
 } from 'lucide-react';
+import { optimizeImageFile } from '../utils/imageOptimization';
 import {
   GraphicResource,
   GraphicResourceCategory,
@@ -158,46 +159,41 @@ export const GraphicLibraryDrawer: React.FC<GraphicLibraryDrawerProps> = ({
       else if (isJpg) fileType = 'jpg';
       else if (isWebp) fileType = 'webp';
 
-      await new Promise<void>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') {
-            const dataUrl = reader.result;
-            let dw = 80;
-            let dh = 80;
-            if (category.startsWith('people')) {
-              dw = 50;
-              dh = 170;
-            } else if (category === 'vitrines') {
-              dw = 100;
-              dh = 140;
-            } else if (category === 'furniture' || category === 'shelves') {
-              dw = 120;
-              dh = 45;
-            }
+      try {
+        const { dataUrl, isVector } = await optimizeImageFile(file, 1000, 0.75);
+        let dw = 80;
+        let dh = 80;
+        if (category.startsWith('people')) {
+          dw = 50;
+          dh = 170;
+        } else if (category === 'vitrines') {
+          dw = 100;
+          dh = 140;
+        } else if (category === 'furniture' || category === 'shelves') {
+          dw = 120;
+          dh = 45;
+        }
 
-            newItems.push({
-              id: `res-upload-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
-              name: cleanName,
-              category,
-              previewUrl: dataUrl,
-              fileDataUrl: dataUrl,
-              planSvgUrl: dataUrl,
-              fileType,
-              sourceLicense: `Importado: ${file.name}`,
-              defaultWidthCm: dw,
-              defaultHeightCm: dh,
-              defaultDepthCm: dw,
-              tags: [category, fileType, cleanName.toLowerCase()],
-              isVector: fileType === 'svg',
-              defaultTintColor: fileType === 'svg' ? '#171717' : undefined,
-              createdAt: new Date().toISOString().slice(0, 10),
-            });
-          }
-          resolve();
-        };
-        reader.readAsDataURL(file);
-      });
+        newItems.push({
+          id: `res-upload-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+          name: cleanName,
+          category,
+          previewUrl: dataUrl,
+          fileDataUrl: dataUrl,
+          planSvgUrl: dataUrl,
+          fileType,
+          sourceLicense: `Importado: ${file.name}`,
+          defaultWidthCm: dw,
+          defaultHeightCm: dh,
+          defaultDepthCm: dw,
+          tags: [category, fileType, cleanName.toLowerCase()],
+          isVector,
+          defaultTintColor: isVector ? '#171717' : undefined,
+          createdAt: new Date().toISOString().slice(0, 10),
+        });
+      } catch (err) {
+        console.error('Error optimizando recurso gráfico:', err);
+      }
     }
 
     if (newItems.length > 0) {

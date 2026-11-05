@@ -25,6 +25,7 @@ import {
   Unlock,
   AlertCircle,
 } from 'lucide-react';
+import { optimizeImageFile } from '../utils/imageOptimization';
 import {
   GraphicResource,
   ItemType,
@@ -475,41 +476,41 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
     }
   };
 
-  const handleUploadFromComputer = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadFromComputer = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach((file, idx) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          const cleanName = file.name.replace(/\.[^/.]+$/, '');
-          onAddItem({
-            wallId: wall.id,
-            zoneId: wall.zoneId,
-            name: cleanName,
-            code: `FOT-${wallItems.length + idx + 1}`,
-            type: 'photo',
-            category: 'artworks',
-            layerId: 'artworks',
-            widthCm: 50,
-            heightCm: 70,
-            xCm: Math.min(wallWidthCm - 55, 25 + idx * 60),
-            yCm: 115,
-            rotation: 0,
-            frameStyle: 'black',
-            matWidthCm: 2,
-            description: `Fotografía cargada (${file.name}).`,
-            imageUrl: reader.result,
-            locked: false,
-            visible: true,
-            aspectRatioLocked: true,
-            zOrder: wallItems.length + idx + 1,
-          });
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    for (let idx = 0; idx < files.length; idx++) {
+      const file = files[idx];
+      try {
+        const { dataUrl } = await optimizeImageFile(file, 1200, 0.8);
+        const cleanName = file.name.replace(/\.[^/.]+$/, '');
+        onAddItem({
+          wallId: wall.id,
+          zoneId: wall.zoneId,
+          name: cleanName,
+          code: `FOT-${wallItems.length + idx + 1}`,
+          type: 'photo',
+          category: 'artworks',
+          layerId: 'artworks',
+          widthCm: 50,
+          heightCm: 70,
+          xCm: Math.min(wallWidthCm - 55, 25 + idx * 60),
+          yCm: 115,
+          rotation: 0,
+          frameStyle: 'black',
+          matWidthCm: 2,
+          description: `Fotografía cargada (${file.name}).`,
+          imageUrl: dataUrl,
+          locked: false,
+          visible: true,
+          aspectRatioLocked: true,
+          zOrder: wallItems.length + idx + 1,
+        });
+      } catch (err) {
+        console.error('Error optimizando foto subida:', err);
+      }
+    }
     e.target.value = '';
     setShowAddMenu(false);
   };

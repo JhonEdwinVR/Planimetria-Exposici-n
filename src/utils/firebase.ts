@@ -52,8 +52,17 @@ export function subscribeToSharedProject(
  */
 export async function saveProjectToFirestore(project: ExhibitionProject): Promise<void> {
   const projectRef = doc(db, 'projects', SHARED_PROJECT_DOC_ID);
-  // Limpiar valores undefined o prototipos para Firestore
   const cleanData = JSON.parse(JSON.stringify(project));
+  
+  // Verificación de tamaño para prevenir el error de 1MB de Firestore
+  const serialized = JSON.stringify(cleanData);
+  const approximateSizeBytes = new Blob([serialized]).size;
+  if (approximateSizeBytes > 1048576) {
+    const mb = (approximateSizeBytes / (1024 * 1024)).toFixed(2);
+    console.error(`El proyecto pesa ${mb} MB y excede el límite de 1 MB por documento de Firestore.`);
+    throw new Error(`Tamaño excedido (${mb} MB). La imagen subida debe comprimirse.`);
+  }
+
   await setDoc(projectRef, cleanData);
 }
 

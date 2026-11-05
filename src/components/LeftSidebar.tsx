@@ -29,6 +29,7 @@ import {
   Maximize2,
   ArrowLeftRight,
 } from 'lucide-react';
+import { optimizeImageFile } from '../utils/imageOptimization';
 import {
   BackgroundPlanSettings,
   FloorPlanElement,
@@ -237,20 +238,20 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     setShowNewLayerForm(false);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          const cleanName = file.name.replace(/\.[^/.]+$/, '');
-          onAddLibraryImage(cleanName, reader.result, 50, 70);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      try {
+        const { dataUrl } = await optimizeImageFile(file, 1200, 0.8);
+        const cleanName = file.name.replace(/\.[^/.]+$/, '');
+        onAddLibraryImage(cleanName, dataUrl, 50, 70);
+      } catch (err) {
+        console.error('Error optimizando imagen de biblioteca:', err);
+      }
+    }
     e.target.value = '';
   };
 

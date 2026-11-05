@@ -27,6 +27,7 @@ import {
   PenTool,
   Scissors,
 } from 'lucide-react';
+import { optimizeImageFile } from '../utils/imageOptimization';
 import {
   BackgroundPlanSettings,
   FloorPlanElement,
@@ -492,19 +493,18 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
       });
     };
 
-    const handleItemImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleItemImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          onUpdateMultipleItems(itemIds, {
-            imageUrl: reader.result,
-            isVector: file.name.endsWith('.svg'),
-          });
-        }
-      };
-      reader.readAsDataURL(file);
+      try {
+        const { dataUrl, isVector } = await optimizeImageFile(file, 1200, 0.8);
+        onUpdateMultipleItems(itemIds, {
+          imageUrl: dataUrl,
+          isVector,
+        });
+      } catch (err) {
+        console.error('Error optimizando imagen de obra:', err);
+      }
       e.target.value = '';
     };
 
@@ -2417,16 +2417,15 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => {
-                  if (typeof reader.result === 'string') {
-                    onUploadReferenceImage(reader.result);
-                  }
-                };
-                reader.readAsDataURL(file);
+                try {
+                  const { dataUrl } = await optimizeImageFile(file, 1600, 0.75);
+                  onUploadReferenceImage(dataUrl);
+                } catch (err) {
+                  console.error('Error cargando plano de referencia:', err);
+                }
                 e.target.value = '';
               }}
             />

@@ -13,6 +13,7 @@ import {
   X,
   RotateCw,
 } from 'lucide-react';
+import { optimizeImageFile } from '../utils/imageOptimization';
 import { BackgroundPlanSettings } from '../types/exhibition';
 
 interface BackgroundCalibrationModalProps {
@@ -50,16 +51,15 @@ export const BackgroundCalibrationModal: React.FC<BackgroundCalibrationModalProp
     rotationDeg: 0,
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        onUploadBackgroundImage(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const { dataUrl } = await optimizeImageFile(file, 1600, 0.75);
+      onUploadBackgroundImage(dataUrl);
+    } catch (err) {
+      console.error('Error optimizando plano de fondo:', err);
+    }
     e.target.value = '';
   };
 
