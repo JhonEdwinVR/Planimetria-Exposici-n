@@ -1214,7 +1214,7 @@ export const INITIAL_PROJECT: ExhibitionProject = {
   projectName: 'Spaguetty House',
   subtitle: 'Estudio Digital de Montaje Expositivo',
   version: '2.3.0',
-  updatedAt: new Date().toISOString(),
+  updatedAt: '2026-01-01T00:00:00.000Z',
   zones: initialZones,
   vertices: initialVertices,
   walls: initialWalls,

@@ -59,6 +59,7 @@ import {
   saveProjectToIndexedDB,
 } from './utils/storageAndExport';
 import {
+  loadInitialProjectFromFirestore,
   saveProjectToFirestore,
   subscribeToSharedProject,
 } from './utils/firebase';
@@ -221,74 +222,75 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Load persisted project from IndexedDB and subscribe to Firestore for real-time collaboration
+  // Load persisted project from Firestore as source of truth and subscribe to updates
   useEffect(() => {
     let mounted = true;
 
-    // 1. Carga rápida inicial desde caché local IndexedDB
-    Promise.all([loadProjectFromIndexedDB(), loadGraphicResourcesFromDB()]).then(
-      ([saved, dbResources]) => {
-        if (!mounted) return;
-        setProject((prev) => {
-          const isSameVersion = saved && saved.version === INITIAL_PROJECT.version;
-          const base = isSameVersion && saved.walls && saved.walls.length > 0 ? saved : INITIAL_PROJECT;
-          const layerStates =
-            base.layerStates && base.layerStates.length > 0
-              ? base.layerStates
-              : INITIAL_LAYER_STATES;
-
-          const backgroundPlan = base.backgroundPlan || DEFAULT_BACKGROUND_PLAN;
-          const annotations = base.annotations && base.annotations.length > 0 ? base.annotations : INITIAL_PROJECT.annotations;
-          const trash = base.trash || [];
-
-          const existingIds = new Set<string>();
-          const combined: GraphicResource[] = [];
-
-          [
-            ...(base.graphicLibrary || []),
-            ...INITIAL_GRAPHIC_LIBRARY,
-            ...(dbResources || []),
-          ].forEach((r) => {
-            if (!existingIds.has(r.id)) {
-              existingIds.add(r.id);
-              combined.push(r);
-            }
-          });
-
-          return {
-            ...base,
-            backgroundPlan,
-            annotations,
-            trash,
-            layerStates,
-            graphicLibrary: combined,
-          };
-        });
+    // 1. Cargar desde Firestore (fuente de verdad compartida)
+    loadInitialProjectFromFirestore().then((cloudProject) => {
+      if (!mounted) return;
+      if (cloudProject && cloudProject.walls && cloudProject.walls.length > 0) {
+        isRemoteUpdateRef.current = true;
+        setProject(cloudProject);
+        saveProjectToIndexedDB(cloudProject).catch(() => {});
         isInitialLoadDoneRef.current = true;
+      } else {
+        // Si no hay proyecto en Firestore todavía, usar la caché local o el inicial
+        Promise.all([loadProjectFromIndexedDB(), loadGraphicResourcesFromDB()]).then(
+          ([saved, dbResources]) => {
+            if (!mounted) return;
+            const isSameVersion = saved && saved.version === INITIAL_PROJECT.version;
+            const base = isSameVersion && saved.walls && saved.walls.length > 0 ? saved : INITIAL_PROJECT;
+            const layerStates =
+              base.layerStates && base.layerStates.length > 0
+                ? base.layerStates
+                : INITIAL_LAYER_STATES;
+
+            const backgroundPlan = base.backgroundPlan || DEFAULT_BACKGROUND_PLAN;
+            const annotations = base.annotations && base.annotations.length > 0 ? base.annotations : INITIAL_PROJECT.annotations;
+            const trash = base.trash || [];
+
+            const existingIds = new Set<string>();
+            const combined: GraphicResource[] = [];
+
+            [
+              ...(base.graphicLibrary || []),
+              ...INITIAL_GRAPHIC_LIBRARY,
+              ...(dbResources || []),
+            ].forEach((r) => {
+              if (!existingIds.has(r.id)) {
+                existingIds.add(r.id);
+                combined.push(r);
+              }
+            });
+
+            const merged = {
+              ...base,
+              backgroundPlan,
+              annotations,
+              trash,
+              layerStates,
+              graphicLibrary: combined,
+            };
+
+            setProject(merged);
+            // Guardar en Firestore para que el proyecto compartido ya quede creado en la nube
+            saveProjectToFirestore(merged).catch(() => {});
+            isInitialLoadDoneRef.current = true;
+          }
+        );
       }
-    );
+    });
 
     // 2. Suscripción en tiempo real a Firestore para sincronización multiusuario
     const unsubscribe = subscribeToSharedProject((remoteProject) => {
       if (!mounted) return;
       if (remoteProject && remoteProject.walls && remoteProject.walls.length > 0) {
-        setProject((prev) => {
-          // Si el estado local tiene cambios más recientes que la versión remota, proteger el estado local
-          if (prev.updatedAt && remoteProject.updatedAt) {
-            const localTime = new Date(prev.updatedAt).getTime();
-            const remoteTime = new Date(remoteProject.updatedAt).getTime();
-            if (localTime > remoteTime) {
-              return prev;
-            }
-          }
-          isRemoteUpdateRef.current = true;
-          // Cachear en almacenamiento local
-          saveProjectToIndexedDB(remoteProject).catch(() => {});
-          return {
-            ...prev,
-            ...remoteProject,
-          };
-        });
+        isRemoteUpdateRef.current = true;
+        setProject(remoteProject);
+        // Cachear en almacenamiento local
+        saveProjectToIndexedDB(remoteProject).catch(() => {});
+        isInitialLoadDoneRef.current = true;
       }
     });
 
