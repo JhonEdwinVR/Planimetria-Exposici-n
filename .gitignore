@@ -1,0 +1,20 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+Thumbs.db
+*.log
+.env*
+!.env.example
+
+# AI Studio local workspace
+.aistudio/
+
+# Vercel
+.vercel/
+
+# IDE
+.vscode/
+.idea/
+

@@ -1,0 +1,632 @@
+# Plan de desarrollo: Galería interactiva de montaje – Spaguetty House
+
+La propuesta es desarrollar una aplicación web que funcione como un estudio digital de montaje expositivo. La idea central es convertir el plano del espacio en una interfaz interactiva en la que puedas diseñar, organizar y visualizar toda la exposición antes de realizar el montaje físico.
+
+No debería ser solamente un plano con fotografías representadas mediante rectángulos. Debe funcionar como un editor de exposiciones: seleccionar un muro, observarlo de frente, montar las fotografías a escala, modificar sus dimensiones, añadir textos, referencias visuales, elementos decorativos y comprobar cómo se verá la composición.
+
+Mi recomendación es construirla en Google AI Studio mediante Build Mode, utilizando React y TypeScript, con SVG para representar el plano y las paredes. Esta combinación permite construir un editor vectorial preciso, con elementos seleccionables y escalables. Google AI Studio permite generar aplicaciones web con React, previsualizarlas y continuar modificando sus archivos desde el entorno de desarrollo.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://ai.google.dev\&sz=32)
+
+Google AI for Developers+1
+
+
+
+# 1. Concepto general de la aplicación
+
+SPAGUETTY HOUSE
+
+Concepto de aplicación
+
+# Exhibition Planner
+
+Editor interactivo de espacios y montaje fotográfico
+
+[Elevate Your Design Projects with Advanced Editing Capabilities | Maket](https://images.openai.com/static-rsc-4/0wjEgUdvn7W54CTwPE87OIcgKOrA6J2_etEeysaOQJ9yauQZssD8qMHt4mOrxgbMF61i3VMz0oxKrQN_sU-XVOHnD5li6XzxH46ql1phKttHyMnGV1ghnra2G_du28Z3iZdx3fis1xWGBMC_EvXwWV-QMmGu7iwAaaue3EAejVs?purpose=inline)
+
+[maket.ai](https://www.maket.ai/blog/elevate-your-design-projects-with-advanced-editing-capabilities?utm_source=chatgpt.com)
+
+Plano general
+
+Distribución y dimensiones del espacio.
+
+Vista de muro
+
+Visualización frontal de cada pared.
+
+Editor de obras
+
+Fotografías, textos, marcos y referencias.
+
+Escala real
+
+Medidas editables y distribución proporcional.
+
+La aplicación tendrá tres niveles de visualización:
+
+1. Plano general: vista superior del espacio completo, con muros, dimensiones, zonas y nombres de los participantes.
+2. Elevación del muro: al seleccionar una pared, se abre su representación frontal, conservando las proporciones reales.
+3. Composición expositiva: edición visual de las fotografías, textos, marcos, separaciones, decoración y referencias.
+
+Las tres vistas deben compartir la misma información. Es decir, al modificar la longitud de un muro en el plano, debe actualizarse su elevación; al mover una fotografía en la elevación, el cambio debe conservarse al volver al proyecto.
+
+# 2. Estructura de la interfaz
+
+La interfaz debe tener una estética minimalista inspirada en herramientas de diseño arquitectónico y editorial.
+
+## Distribución principal
+
+[cadR - Professional 2D CAD Software](https://images.openai.com/static-rsc-4/BBI_LtN5I1Bv_LABvp1XOgE40QoIjLD5nqHfkiqs78TG3Koz0PkNL5qtTlZPzJ7G7zqMoo031-AMhqcI0vQR07U9CK2l4t5JqTDvoCIVfWOqXc6ifueTRT7uu7vhB1SoII0sU54eCmOOeM8xz9P--FCMBFRTwRIHEbBO0FlluW8?purpose=inline)
+
+[cadr-hq.com](https://cadr-hq.com/en?utm_source=chatgpt.com)
+
+Propongo organizarla en cuatro áreas:
+
+| Área            | Función                                                    |
+| --------------- | ---------------------------------------------------------- |
+| Barra superior  | Nombre del proyecto, guardar, deshacer, rehacer, exportar. |
+| Panel izquierdo | Zonas, muros, fotografías, textos y capas.                 |
+| Espacio central | Plano o elevación del muro seleccionado.                   |
+| Panel derecho   | Propiedades del elemento seleccionado.                     |
+
+### Barra superior
+
+Debe contener:
+
+- Nombre del proyecto: Spaguetty House.
+- Selector de vista: Plano / Elevación / Presentación.
+- Botones de deshacer y rehacer.
+- Activar o desactivar cuadrícula.
+- Ajustar vista al espacio.
+- Guardar proyecto.
+- Exportar.
+
+### Panel izquierdo: estructura del espacio
+
+Organizar las zonas como un árbol de elementos:
+
+```
+SPAGUETTY HOUSE
+│
+├── Plano general
+│
+├── Entrada – Jhon Edwin
+│   ├── Muro principal
+│   ├── Fotografía principal
+│   └── Texto
+│
+├── Pasillo – Catalina
+│   ├── Muro principal
+│   ├── Retorno
+│   └── 12 fotografías
+│
+├── Sector – Carlos
+│   └── Muro de 5.50 m
+│
+├── Sector – Villamaga
+│   ├── Muro 1
+│   └── Muro 2
+│
+├── Sector – Andrea
+│   ├── Tramo 1
+│   ├── Columna
+│   └── Tramo 2
+│
+└── Sector – Clara
+    └── Muro de 4.02 m
+```
+
+Cada zona debe poder expandirse, contraerse, ocultarse y bloquearse.
+
+### Panel derecho: propiedades
+
+El panel debe cambiar dependiendo del elemento seleccionado.
+
+Cuando seleccionas un muro:
+
+- Nombre del muro.
+- Longitud.
+- Altura.
+- Grosor.
+- Color.
+- Material.
+- Visibilidad.
+- Posición.
+- Orientación.
+- Número de fotografías asociadas.
+
+Cuando seleccionas una fotografía:
+
+- Nombre de la obra.
+- Imagen.
+- Ancho y alto.
+- Posición horizontal y vertical.
+- Rotación.
+- Separación con otras obras.
+- Tipo de marco.
+- Margen interior.
+- Texto descriptivo.
+
+# 3. Funcionamiento del plano interactivo
+
+[Wall Gallery Planner - Design Your Perfect Gallery Wall](https://images.openai.com/static-rsc-4/XSfSicxgSsf0z61ikuVz3KPAqROlc0v3_wS3zuYfANOXuhv-TCJMfPIPAnzYgf_sVKIRp_VGlL87r368XGcy87_E_Vf7R5dJqhiIZS8I4L6xtVkVqTS0-plZaJes2iF2MCBYKLpufWrwr_Olufn78lLMTBtdrtc2Fhn_Oo4u32M?purpose=inline)
+
+[galleryplanner.art](https://galleryplanner.art/?utm_source=chatgpt.com)
+
+Esta es la parte central de la aplicación.
+
+El espacio debe representarse mediante un plano vectorial, no como una imagen estática.
+
+### Interacciones
+
+Seleccionar un muro
+
+Al hacer clic sobre cualquier pared:
+
+1. Se resalta con un color de selección.
+2. Se muestra su nombre.
+3. Aparece su longitud.
+4. Se abre la opción «Ver muro de frente».
+5. Se puede entrar al editor de montaje.
+
+Modificar medidas
+
+Todas las dimensiones deben poder modificarse mediante campos numéricos.
+
+Ejemplo:
+
+Propiedades del muro
+
+Muro principal – Carlos
+
+Seleccionado
+
+Longitud (m)
+
+Altura (m)
+
+Grosor (cm)
+
+Separación de obras (cm)
+
+Ejemplo conceptual de los controles de edición.
+
+Al modificar una dimensión, el plano debe actualizarse automáticamente.
+
+Importante: el sistema debe conservar las conexiones entre los muros. Si dos paredes comparten un vértice, al modificar una longitud se debe actualizar la geometría relacionada sin dejar espacios accidentales entre ellas.
+
+### Herramientas de navegación
+
+- Zoom con rueda del ratón.
+- Desplazamiento del plano con clic sostenido.
+- Ajustar todo el plano a la pantalla.
+- Centrar una zona.
+- Mostrar u ocultar dimensiones.
+- Mostrar u ocultar nombres de los participantes.
+- Mostrar u ocultar fotografías.
+- Activar cuadrícula y guías de alineación.
+
+También debe existir una opción para mostrar la imagen original del plano como fondo de referencia, con transparencia ajustable.
+
+Esto permitirá comparar el dibujo vectorial con la distribución original.
+
+# 4. Vista frontal: editor de paredes
+
+Esta será la funcionalidad más importante después del plano general.
+
+Cada pared debe tener una representación frontal independiente.
+
+[Ashmolean’s Vergina Exhibition — London Atelier Architects](https://images.openai.com/static-rsc-4/c6bXHi5FwvtrvTMPne909jMaNjm4O11OAArsVL013mLkaNyxskpliF-MmCS_BPJiebRDtPJYZwBcSoTNi8iWzUrehHRzQ50Mg6Ekh2kYaEocLBwF_hsAUTQySH32Ku_r6TZSCPKpHbK0TwBLXWUkB2mhse3raeqFSyVM79-Yk30?purpose=inline)
+
+[londonatelier.com](https://www.londonatelier.com/projects-pages/ashmolean-vergina-exhibition?utm_source=chatgpt.com)
+
+Por ejemplo, al seleccionar el muro de Carlos, la aplicación cambia a una vista frontal en la que se observa una pared de 5.50 metros de ancho.
+
+En esta vista se deben representar las fotografías en sus proporciones reales.
+
+### Herramientas de edición
+
+Cada fotografía debe ser un objeto independiente.
+
+Debe ser posible:
+
+- Arrastrarla por la pared.
+- Modificar su ancho.
+- Modificar su alto.
+- Cambiar su orientación.
+- Rotarla.
+- Duplicarla.
+- Eliminarla.
+- Cambiar la imagen.
+- Añadir un marco.
+- Modificar el espacio entre fotografías.
+- Alinear varias fotografías.
+- Agrupar fotografías.
+- Bloquear su posición.
+
+Las fotografías se deben visualizar a escala proporcional, sin deformar sus relaciones de aspecto.
+
+### Posición y dimensiones reales
+
+Cada elemento debe tener tres propiedades fundamentales:
+
+| Propiedad                                    | Ejemplo    |
+| -------------------------------------------- | ---------- |
+| Posición horizontal desde el borde izquierdo | 45 cm      |
+| Posición vertical desde el suelo             | 110 cm     |
+| Dimensiones de la fotografía                 | 50 × 70 cm |
+
+La pared debe funcionar como una superficie de coordenadas.
+
+El usuario puede arrastrar una fotografía visualmente o escribir sus coordenadas de forma precisa.
+
+### Agregar fotografías
+
+Debe existir un botón «Agregar elemento».
+
+[EXHIBITION VIEWS — ANTONY CAIRNS](https://images.openai.com/static-rsc-4/ScjurjW6A-KPIAJ-FfoQGBCS4xKUYPCTmaaArbH3UvKCq4Z1nEjWe51sfQKEclwv-4Fu7lWDJAUUSM6afQu4uwjsZ4KwEclGuwmfytBP8QdRlvJfUpnhDBMxaRZ_DpTH9H-hqfdIDJLPY_aPmPni-IbjVwZ5tzDrq5GCqh6xxUY?purpose=inline)
+
+[antony-cairns.co.uk](https://www.antony-cairns.co.uk/e-views?utm_source=chatgpt.com)
+
+Al seleccionarlo, se despliega una biblioteca con:
+
+- Agregar fotografía desde el computador.
+- Agregar fotografía mediante URL.
+- Agregar texto.
+- Agregar título.
+- Agregar descripción.
+- Agregar marco.
+- Agregar portarretrato.
+- Agregar elemento decorativo.
+- Agregar imagen de referencia.
+
+También debe ser posible seleccionar varias fotografías y modificar sus características conjuntamente.
+
+# 5. Sistema de composición y distribución
+
+La aplicación debe permitir trabajar tanto de manera libre como mediante distribuciones automáticas.
+
+Por ejemplo, si se tienen cinco fotografías de 50 × 70 cm en un muro de 5.50 metros, el sistema debe poder calcular y visualizar cómo distribuirlas.
+
+### Distribuciones automáticas
+
+- Distribuir horizontalmente.
+- Distribuir verticalmente.
+- Centrar el conjunto.
+- Mantener una separación específica.
+- Alinear por el centro.
+- Alinear por el borde superior.
+- Alinear por el borde inferior.
+- Distribuir uniformemente.
+
+Debe existir un sistema de advertencias:
+
+Validación del montaje
+
+Las fotografías están dentro del muro.
+
+Dos fotografías se están superponiendo.
+
+Una fotografía supera el ancho disponible.
+
+Las advertencias deben ser visuales y permitir corregir el problema directamente.
+
+# 6. Animación y simulación del espacio
+
+No recomiendo construir inicialmente una simulación 3D completa. Eso aumentaría innecesariamente la complejidad del desarrollo.
+
+Es mejor construir una experiencia visual en 2D con transiciones y una representación frontal muy precisa.
+
+La aplicación debe sentirse como una mesa de trabajo digital.
+
+### Animaciones propuestas
+
+Transición entre vistas
+
+Al hacer clic en un muro, el plano debe acercarse progresivamente a esa sección y transformarse en su vista frontal.
+
+Aparición de elementos
+
+Cuando se agrega una fotografía, esta aparece con una transición suave.
+
+Movimiento de fotografías
+
+Las fotografías deben poder desplazarse mediante arrastre, con animaciones discretas.
+
+Modo presentación
+
+Debe existir una vista sin paneles ni herramientas, donde se pueda observar cómo quedaría el montaje final.
+
+[How to Become a Fine Art Photographer: Gear, Mindset, and Gallery Essentials](https://images.openai.com/static-rsc-4/vj2edD30kZ6meOr4ufNjQkE1xrA7fpDpwAH3IWVQOfi3DuLdPu6OS8-NxD5pJ3a4zaNYJQ65jPwERq3LHmm_c2C2p6lTG7ycJvDbTzHA9LU2VETvysHkvzcq-XFyOWM-7hRdBtXR7PtRZsIx7xcRgCoJzcXRL9lIF9jIc1vYDXQ?purpose=inline)
+
+[art-classes.co.uk](https://art-classes.co.uk/how-to-become-a-fine-art-photographer-gear-mindset-and-gallery-essentials?utm_source=chatgpt.com)
+
+### Simulación de materiales y decoración
+
+Cada muro podría tener propiedades visuales:
+
+- Blanco.
+- Gris.
+- Negro.
+- Textura de concreto.
+- Textura de ladrillo.
+- Papel pergamino.
+- Madera.
+- Color personalizado.
+
+También se podrán incorporar elementos decorativos como lámparas, pedestales, textos murales, marcos y otros objetos.
+
+El objetivo es que la exposición se pueda diseñar sin perder la claridad del plano técnico.
+
+# 7. Datos iniciales del proyecto
+
+La aplicación debe abrir con el plano de Spaguetty House precargado.
+
+La imagen original debe estar disponible como referencia visual y las zonas deben estar creadas desde el inicio.
+
+Esta sería la estructura de datos inicial:
+
+## Entrada – Jhon Edwin
+
+| Elemento               | Medidas                             |
+| ---------------------- | ----------------------------------- |
+| Muro principal         | 1.80 m                              |
+| Cota vertical indicada | 2.60 m                              |
+| Fotografía             | 1.00 × 1.50 m                       |
+| Complemento            | Texto de Jhon / texto de fotografía |
+
+## Pasillo – Catalina
+
+| Elemento       | Medidas                      |
+| -------------- | ---------------------------- |
+| Muro principal | 3.50 m                       |
+| Retorno        | 1.40 m                       |
+| Fotografías    | 12                           |
+| Formatos       | 20 × 30 cm y 30 × 45 cm      |
+| Montaje        | Libre, sobre papel pergamino |
+
+## Sector – Carlos
+
+| Elemento          | Medidas                          |
+| ----------------- | -------------------------------- |
+| Longitud del muro | 5.50 m aprox.                    |
+| Fotografías       | 5, según los elementos dibujados |
+| Formato           | 50 × 70 cm                       |
+| Separación        | 10 cm                            |
+
+El número de fotografías debe ser editable.
+
+## Sector – Villamaga
+
+| Elemento              | Medidas         |
+| --------------------- | --------------- |
+| Retorno               | 1.40 m          |
+| Muro adyacente        | 1.55 m          |
+| Fotografías formato 1 | 3 de 45 × 30 cm |
+| Fotografías formato 2 | 6 de 20 × 30 cm |
+
+## Sector – Andrea
+
+| Elemento          | Medidas               |
+| ----------------- | --------------------- |
+| Primer tramo      | 1.59 m                |
+| Columna / resalte | Ancho por definir     |
+| Segundo tramo     | 2.19 m                |
+| Fotografías       | 5                     |
+| Complemento       | Texto                 |
+| Montaje           | Opción portarretratos |
+
+El ancho del resalte debe ser editable, ya que no está especificado.
+
+## Sector – Clara
+
+| Elemento              | Medidas     |
+| --------------------- | ----------- |
+| Longitud del muro     | 4.02 m      |
+| Cota lateral indicada | 2.90 m      |
+| Fotografías           | 5           |
+| Formato               | 100 × 70 cm |
+
+## Texto curatorial
+
+| Elemento      | Medidas     |
+| ------------- | ----------- |
+| Formato       | 70 × 100 cm |
+| Muro previsto | 1.75 m      |
+
+Medidas por verificar
+
+Hay tres aspectos que la aplicación debe dejar señalados como pendientes de confirmación:
+
+1. El muro asociado al texto curatorial figura con 1.75 m en la descripción, pero en el dibujo aparece una cota de 1.55 m.
+2. La cota de 2.90 m del sector de Clara debe confirmarse como longitud o altura y precisar a qué muro corresponde.
+3. El ancho de la columna o resalte del sector de Andrea y la longitud total inferior del espacio no están especificados.
+
+Además, la altura de los muros que no tienen cota confirmada debe permanecer como «Por definir». Para poder hacer una primera previsualización se puede utilizar una altura provisional de 2.60 m, claramente identificada y editable.
+
+# 8. Funciones adicionales necesarias
+
+Estas características harán que el proyecto sea mucho más útil durante la preparación de la exposición.
+
+| Funcionalidad                | Descripción                                              |
+| ---------------------------- | -------------------------------------------------------- |
+| Deshacer / rehacer           | Recuperar cambios anteriores.                            |
+| Guardado automático          | Guardar los cambios mientras se trabaja.                 |
+| Duplicar elementos           | Copiar fotografías, textos y decoraciones.               |
+| Capas                        | Organizar fotografías, textos, dimensiones y decoración. |
+| Bloquear elementos           | Evitar movimientos accidentales.                         |
+| Biblioteca de imágenes       | Mantener las fotografías y referencias del proyecto.     |
+| Vista comparativa            | Comparar dos propuestas de montaje.                      |
+| Exportar plano               | Descargar el plano general como PNG o PDF.               |
+| Exportar elevaciones         | Descargar cada muro por separado.                        |
+| Inventario                   | Listado de fotografías, formatos, nombres y ubicaciones. |
+| Importar / exportar proyecto | Guardar y recuperar toda la información mediante JSON.   |
+
+Una función especialmente útil: generar una ficha técnica por muro con el nombre del participante, dimensiones, fotografías utilizadas, formatos, separaciones y posición de cada obra. Esto facilitará el montaje físico.
+
+# 9. Arquitectura técnica recomendada
+
+Para evitar que Google AI Studio genere una aplicación visualmente atractiva pero con funcionalidades incompletas, conviene definir desde el principio cómo debe organizar el proyecto.
+
+| Tecnología          | Uso                                                |
+| ------------------- | -------------------------------------------------- |
+| React               | Interfaz de la aplicación.                         |
+| TypeScript          | Datos y lógica del editor.                         |
+| SVG                 | Plano, muros, cotas y fotografías a escala.        |
+| CSS                 | Diseño minimalista y animaciones.                  |
+| IndexedDB           | Almacenamiento de imágenes y proyectos localmente. |
+| LocalStorage        | Preferencias y configuración del editor.           |
+| JSON                | Importación y exportación de proyectos.            |
+| jsPDF o equivalente | Exportación de fichas y planos PDF.                |
+
+No es necesario utilizar Gemini API para las funciones básicas del editor. La aplicación debe funcionar sin depender de servicios de inteligencia artificial.
+
+La persistencia inicial debe ser local. Si posteriormente se necesita que varias personas editen el mismo plano desde diferentes computadores, se puede añadir Firebase o una base de datos compartida como segunda fase.
+
+# 10. Prompt maestro para Google AI Studio
+
+Este es el prompt que recomiendo utilizar en Google AI Studio → Build Mode. Adjunta también la imagen original del plano como referencia visual al iniciar el proyecto.
+
+He redactado la instrucción para que Google AI Studio construya una aplicación funcional y no solamente un prototipo visual.
+
+PROMPT PRINCIPAL
+
+Listo para copiar
+
+Aplicación web · React · TypeScript · SVG
+
+&#x20;Copiar prompt completo
+
+# 11. Desarrollo por fases dentro de Google AI Studio
+
+No recomiendo pedirle a Gemini que construya y perfeccione todas las funcionalidades en una sola iteración. Es preferible generar una primera versión y luego trabajar con instrucciones específicas.
+
+Google AI Studio permite continuar el desarrollo desde el chat de Build Mode, modificando el código generado y sus componentes.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://ai.google.dev\&sz=32)
+
+Google AI for Developers
+
+
+
+Estas son las cinco fases que utilizaría:
+
+1. Fase 1. Construcción del plano
+
+   Prioridad máxima
+
+   Crear el plano vectorial, los muros seleccionables, las zonas, las cotas y los controles de medidas. Cargar la geometría inicial basada en el dibujo.
+2. Fase 2. Vista frontal de los muros
+
+   Habilitar el cambio de vista entre plano general y elevación. Implementar las dimensiones reales de las paredes, reglas, cuadrículas y coordenadas.
+3. Fase 3. Montaje fotográfico
+
+   Implementar carga de imágenes, arrastre, escalado, rotación, alineación, distribución automática y advertencias de espacio.
+4. Fase 4. Diseño y ambientación
+
+   Añadir textos, marcos, portarretratos, materiales, imágenes de referencia, decoración y modo presentación.
+5. Fase 5. Gestión y exportación
+
+   Añadir guardado persistente, importación y exportación, inventario, fichas técnicas y PDF.
+
+## Prompts de refinamiento para cada fase
+
+Después de generar la primera versión, utiliza estas instrucciones progresivamente.
+
+Para perfeccionar el plano:
+
+```
+Ahora enfócate exclusivamente en el plano general.
+
+Quiero que todos los muros sean objetos vectoriales independientes y editables. Implementa conexiones entre vértices y actualización dinámica de las cotas.
+
+Al cambiar la longitud de un muro, su geometría debe modificarse y las paredes conectadas deben conservar sus uniones.
+
+Mejora el zoom, desplazamiento, selección de paredes y edición de dimensiones. No modifiques todavía el diseño general de la interfaz.
+```
+
+Para perfeccionar las elevaciones:
+
+```
+Implementa el editor de elevaciones.
+
+Al seleccionar un muro y hacer clic en VER MURO DE FRENTE, muestra una representación frontal a escala proporcional.
+
+Las medidas deben corresponder a las dimensiones reales almacenadas en el muro. Implementa reglas, cuadrícula, coordenadas horizontales y verticales.
+
+Permite editar la altura y la longitud de cada muro desde esta vista y sincroniza los cambios con el plano general.
+```
+
+Para perfeccionar el montaje:
+
+```
+Ahora implementa el editor de fotografías.
+
+Quiero cargar varias fotografías desde el computador, arrastrarlas a la pared y modificar sus dimensiones físicas en centímetros.
+
+Cada fotografía debe conservar su proporción original. Implementa duplicar, eliminar, rotar, alinear, agrupar, distribuir uniformemente y modificar separaciones.
+
+Añade detección de superposiciones y elementos que excedan los límites de la pared.
+```
+
+Para perfeccionar la simulación:
+
+```
+Mejora la experiencia visual y la presentación de los montajes.
+
+Añade transiciones animadas entre plano y elevación, animaciones discretas al agregar fotografías y un modo de presentación sin paneles de edición.
+
+Incorpora marcos, portarretratos, paspartú, materiales de pared, textos, decoración y fotografías de referencia.
+
+La estética debe permanecer minimalista, editorial y arquitectónica. No conviertas la aplicación en un simulador 3D.
+```
+
+Para finalizar y comprobar el funcionamiento:
+
+```
+Realiza una auditoría funcional de toda la aplicación.
+
+Comprueba que se puedan modificar todas las medidas, que los cambios se reflejen en todas las vistas y que las fotografías mantengan sus dimensiones y posiciones.
+
+Comprueba el guardado y recuperación de proyectos, incluyendo las imágenes cargadas.
+
+Prueba las operaciones de deshacer, rehacer, duplicar, eliminar, importar, exportar y las advertencias de superposición.
+
+Corrige los errores de funcionamiento y no dejes controles visuales sin implementar.
+```
+
+# 12. Resultado esperado
+
+El objetivo final es que la aplicación permita realizar todo el proceso de diseño expositivo desde un mismo lugar.
+
+Flujo principal de trabajo
+
+1\. Plano general
+
+Seleccionar una zona o un muro.
+
+2\. Vista frontal
+
+Observar la pared en sus dimensiones reales.
+
+3\. Montaje de fotografías
+
+Subir, organizar, redimensionar y componer las obras.
+
+4\. Ambientación
+
+Incorporar textos, materiales, marcos y referencias.
+
+5\. Documentación
+
+Exportar planos, elevaciones y fichas técnicas para el montaje.
+
+Mi recomendación de desarrollo: priorizar el plano vectorial y el editor de elevaciones. Esas dos funcionalidades constituyen el núcleo de la aplicación. Una vez que funcionen correctamente, añadir la ambientación y las animaciones será mucho más sencillo. La precisión de las medidas debe tener prioridad sobre el realismo visual.
+
+El resultado no debe ser simplemente una representación de cómo se ve la exposición, sino una herramienta con la que puedas tomar decisiones reales de montaje: saber qué cabe en cada pared, a qué altura va cada fotografía, cuánto espacio queda disponible y cómo se relacionan todas las obras dentro del espacio.
+
+Cuando esté terminada, la aplicación podrá publicarse desde Google AI Studio mediante Cloud Run o descargarse como proyecto ZIP para continuar su desarrollo externamente.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://ai.google.dev\&sz=32)
+
+Google AI for Developers+1

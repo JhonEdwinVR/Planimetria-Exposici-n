@@ -1,0 +1,6 @@
+{
+  "name": "Spaguetty House — Exhibition Planner",
+  "description": "Estudio digital interactivo de montaje expositivo, plano vectorial conectado y editor de elevaciones de muros a escala real para Spaguetty House.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
