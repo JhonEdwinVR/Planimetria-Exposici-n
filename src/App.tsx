@@ -58,6 +58,10 @@ import {
   loadProjectFromIndexedDB,
   saveProjectToIndexedDB,
 } from './utils/storageAndExport';
+import {
+  saveProjectToFirestore,
+  subscribeToSharedProject,
+} from './utils/firebase';
 import { TopBar } from './components/TopBar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { FloorPlanCanvas } from './components/FloorPlanCanvas';
@@ -91,6 +95,8 @@ export default function App() {
   const [selectedPlanElementId, setSelectedPlanElementId] = useState<string | null>(null);
   const [isDark, setIsDark] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error' | 'pending'>('saved');
+  const isRemoteUpdateRef = useRef<boolean>(false);
+  const isInitialLoadDoneRef = useRef<boolean>(false);
 
   // Collapsible panels with localStorage persistence
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState<boolean>(() => {
@@ -214,9 +220,11 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Load persisted project from IndexedDB on mount
+  // Load persisted project from IndexedDB and subscribe to Firestore for real-time collaboration
   useEffect(() => {
     let mounted = true;
+
+    // 1. Carga rápida inicial desde caché local IndexedDB
     Promise.all([loadProjectFromIndexedDB(), loadGraphicResourcesFromDB()]).then(
       ([saved, dbResources]) => {
         if (!mounted) return;
@@ -255,26 +263,67 @@ export default function App() {
             graphicLibrary: combined,
           };
         });
+        isInitialLoadDoneRef.current = true;
       }
     );
+
+    // 2. Suscripción en tiempo real a Firestore para sincronización multiusuario
+    const unsubscribe = subscribeToSharedProject((remoteProject) => {
+      if (!mounted) return;
+      if (remoteProject && remoteProject.walls && remoteProject.walls.length > 0) {
+        isRemoteUpdateRef.current = true;
+        setProject((prev) => ({
+          ...prev,
+          ...remoteProject,
+        }));
+        // Cachear en almacenamiento local
+        saveProjectToIndexedDB(remoteProject).catch(() => {});
+      }
+    });
+
     return () => {
       mounted = false;
+      unsubscribe();
     };
   }, []);
 
-  // Auto-save to IndexedDB whenever project changes
+  // Auto-save to IndexedDB and Firestore whenever project changes
   useEffect(() => {
+    if (!isInitialLoadDoneRef.current) return;
+
+    if (isRemoteUpdateRef.current) {
+      isRemoteUpdateRef.current = false;
+      return;
+    }
+
     setSaveStatus('saving');
     const timer = setTimeout(() => {
-      saveProjectToIndexedDB(project)
+      Promise.all([
+        saveProjectToIndexedDB(project),
+        saveProjectToFirestore(project),
+      ])
         .then(() => {
           setSaveStatus('saved');
         })
-        .catch(() => {
+        .catch((err) => {
+          console.warn('Auto-save error:', err);
           setSaveStatus('error');
         });
-    }, 400);
+    }, 500);
     return () => clearTimeout(timer);
+  }, [project]);
+
+  const handleSaveNow = useCallback(() => {
+    setSaveStatus('saving');
+    Promise.all([
+      saveProjectToIndexedDB(project),
+      saveProjectToFirestore(project),
+    ])
+      .then(() => setSaveStatus('saved'))
+      .catch((err) => {
+        console.warn('Manual save error:', err);
+        setSaveStatus('error');
+      });
   }, [project]);
 
   // Helper to commit a state change with Undo/Redo support
@@ -584,8 +633,7 @@ export default function App() {
         handlePasteItem();
       } else if (isCtrlOrMeta && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        setSaveStatus('saving');
-        saveProjectToIndexedDB(project).then(() => setSaveStatus('saved'));
+        handleSaveNow();
       } else if (isCtrlOrMeta && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         setIsLeftSidebarOpen((o) => !o);
@@ -2320,12 +2368,7 @@ export default function App() {
         onFitView={() => setFitTrigger((n) => n + 1)}
         isDark={isDark}
         onToggleTheme={() => setIsDark((d) => !d)}
-        onSaveNow={() => {
-          setSaveStatus('saving');
-          saveProjectToIndexedDB(project)
-            .then(() => setSaveStatus('saved'))
-            .catch(() => setSaveStatus('error'));
-        }}
+        onSaveNow={handleSaveNow}
         saveStatus={saveStatus}
         selectedWall={selectedWall || undefined}
         unresolvedVerificationsCount={unresolvedVerificationsCount}
