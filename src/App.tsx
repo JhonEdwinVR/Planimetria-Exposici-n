@@ -62,6 +62,7 @@ import {
   saveProjectToFirestore,
   subscribeToSharedProject,
 } from './utils/firebase';
+import { sanitizeAndCompressProject } from './utils/imageOptimization';
 import { TopBar } from './components/TopBar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { FloorPlanCanvas } from './components/FloorPlanCanvas';
@@ -271,13 +272,23 @@ export default function App() {
     const unsubscribe = subscribeToSharedProject((remoteProject) => {
       if (!mounted) return;
       if (remoteProject && remoteProject.walls && remoteProject.walls.length > 0) {
-        isRemoteUpdateRef.current = true;
-        setProject((prev) => ({
-          ...prev,
-          ...remoteProject,
-        }));
-        // Cachear en almacenamiento local
-        saveProjectToIndexedDB(remoteProject).catch(() => {});
+        setProject((prev) => {
+          // Si el estado local tiene cambios más recientes que la versión remota, proteger el estado local
+          if (prev.updatedAt && remoteProject.updatedAt) {
+            const localTime = new Date(prev.updatedAt).getTime();
+            const remoteTime = new Date(remoteProject.updatedAt).getTime();
+            if (localTime > remoteTime) {
+              return prev;
+            }
+          }
+          isRemoteUpdateRef.current = true;
+          // Cachear en almacenamiento local
+          saveProjectToIndexedDB(remoteProject).catch(() => {});
+          return {
+            ...prev,
+            ...remoteProject,
+          };
+        });
       }
     });
 
@@ -2384,16 +2395,28 @@ export default function App() {
           )
         }
         onExportJson={() => exportProjectJson(project)}
-        onImportJson={(file) => {
+        onImportJson={async (file) => {
           const reader = new FileReader();
-          reader.onload = () => {
+          reader.onload = async () => {
             try {
               const parsed = JSON.parse(reader.result as string) as ExhibitionProject;
               if (parsed && Array.isArray(parsed.walls)) {
-                commitProjectChange(() => parsed);
+                setSaveStatus('saving');
+                // Optimizar y comprimir imágenes contenidas en el JSON importado
+                const clean = await sanitizeAndCompressProject(parsed);
+                clean.updatedAt = new Date().toISOString();
+                isRemoteUpdateRef.current = false;
+                setProject(clean);
+                // Guardar inmediatamente en Firestore y local
+                await Promise.all([
+                  saveProjectToIndexedDB(clean),
+                  saveProjectToFirestore(clean),
+                ]);
+                setSaveStatus('saved');
               }
             } catch (e) {
-              console.error('Invalid project JSON:', e);
+              console.error('Invalid project JSON or save error:', e);
+              setSaveStatus('error');
             }
           };
           reader.readAsText(file);

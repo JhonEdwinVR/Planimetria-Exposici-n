@@ -21,6 +21,7 @@ import {
   Plus,
   RotateCw,
 } from 'lucide-react';
+import { optimizeImageFile } from '../utils/imageOptimization';
 import {
   BackgroundPlanSettings,
   FloorPlanElement,
@@ -797,16 +798,15 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={(e) => {
+          onChange={async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-              if (typeof reader.result === 'string') {
-                onUploadReferenceImage?.(reader.result);
-              }
-            };
-            reader.readAsDataURL(file);
+            try {
+              const { dataUrl } = await optimizeImageFile(file, 1600, 0.75);
+              onUploadReferenceImage?.(dataUrl);
+            } catch (err) {
+              console.error('Error optimizando foto de referencia:', err);
+            }
             e.target.value = '';
           }}
         />

@@ -54,9 +54,22 @@ export async function saveProjectToFirestore(project: ExhibitionProject): Promis
   const projectRef = doc(db, 'projects', SHARED_PROJECT_DOC_ID);
   const cleanData = JSON.parse(JSON.stringify(project));
   
-  // Verificación de tamaño para prevenir el error de 1MB de Firestore
-  const serialized = JSON.stringify(cleanData);
-  const approximateSizeBytes = new Blob([serialized]).size;
+  // Verificación y auto-poda de redundancias para prevenir el error de 1MB de Firestore
+  let serialized = JSON.stringify(cleanData);
+  let approximateSizeBytes = new Blob([serialized]).size;
+
+  // Si se aproxima al límite de Firestore (> 800 KB), aligerar snapshots y papelera duplicada
+  if (approximateSizeBytes > 800000) {
+    if (Array.isArray(cleanData.snapshots) && cleanData.snapshots.length > 1) {
+      cleanData.snapshots = cleanData.snapshots.slice(-1);
+    }
+    if (Array.isArray(cleanData.trash)) {
+      cleanData.trash = [];
+    }
+    serialized = JSON.stringify(cleanData);
+    approximateSizeBytes = new Blob([serialized]).size;
+  }
+
   if (approximateSizeBytes > 1048576) {
     const mb = (approximateSizeBytes / (1024 * 1024)).toFixed(2);
     console.error(`El proyecto pesa ${mb} MB y excede el límite de 1 MB por documento de Firestore.`);
