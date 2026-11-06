@@ -3,17 +3,22 @@ import { getFirestore, doc, onSnapshot, setDoc, getDoc } from 'firebase/firestor
 import { ExhibitionProject } from '../types/exhibition';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDab0FbQKNH-mT52--jArXlEkFP9cpXYnc",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "kimanaexpo.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "kimanaexpo",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "kimanaexpo.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "423361085578",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:423361085578:web:be1f58d9b42c4702d5ed73",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-PH5WRLTHGH"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-export const db = getFirestore(app);
+const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+
+export const app = isFirebaseConfigured
+  ? (getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0])
+  : null;
+
+export const db = app ? getFirestore(app) : null;
 
 export const SHARED_PROJECT_DOC_ID = 'spaguetty_house_shared_project';
 
@@ -25,6 +30,9 @@ export function subscribeToSharedProject(
   onRemoteUpdate: (project: ExhibitionProject) => void,
   onError?: (err: Error) => void
 ) {
+  if (!db) {
+    return () => {};
+  }
   const projectRef = doc(db, 'projects', SHARED_PROJECT_DOC_ID);
 
   return onSnapshot(
@@ -51,6 +59,7 @@ export function subscribeToSharedProject(
  * Guarda el proyecto en Firestore y lo persiste localmente en caso de fallo.
  */
 export async function saveProjectToFirestore(project: ExhibitionProject): Promise<void> {
+  if (!db) return;
   const projectRef = doc(db, 'projects', SHARED_PROJECT_DOC_ID);
   const cleanData = JSON.parse(JSON.stringify(project));
   
@@ -83,6 +92,7 @@ export async function saveProjectToFirestore(project: ExhibitionProject): Promis
  * Carga inicial única desde Firestore (útil para la primera carga antes del listener).
  */
 export async function loadInitialProjectFromFirestore(): Promise<ExhibitionProject | null> {
+  if (!db) return null;
   try {
     const projectRef = doc(db, 'projects', SHARED_PROJECT_DOC_ID);
     const snap = await getDoc(projectRef);
