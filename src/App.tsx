@@ -222,73 +222,44 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Load persisted project from Firestore as source of truth and subscribe to updates
+  // Load persisted project and subscribe to Firestore
   useEffect(() => {
     let mounted = true;
 
-    // 1. Cargar desde Firestore (fuente de verdad compartida)
+    // 1. Cargar caché local IndexedDB inmediatamente (preserva el progreso local de inmediato)
+    loadProjectFromIndexedDB().then((saved) => {
+      if (!mounted) return;
+      if (saved && Array.isArray(saved.walls) && saved.walls.length > 0) {
+        setProject({
+          ...saved,
+          backgroundPlan: saved.backgroundPlan || DEFAULT_BACKGROUND_PLAN,
+          layerStates: saved.layerStates && saved.layerStates.length > 0 ? saved.layerStates : INITIAL_LAYER_STATES,
+          annotations: saved.annotations || [],
+          trash: saved.trash || [],
+        });
+      }
+    }).catch((err) => console.warn('IndexedDB initial load error:', err));
+
+    // 2. Consultar Firestore para sincronizar la versión más reciente de la nube
     loadInitialProjectFromFirestore().then((cloudProject) => {
       if (!mounted) return;
-      if (cloudProject && cloudProject.walls && cloudProject.walls.length > 0) {
+      if (cloudProject && Array.isArray(cloudProject.walls) && cloudProject.walls.length > 0) {
         isRemoteUpdateRef.current = true;
         setProject(cloudProject);
         saveProjectToIndexedDB(cloudProject).catch(() => {});
-        isInitialLoadDoneRef.current = true;
-      } else {
-        // Si no hay proyecto en Firestore todavía, usar la caché local o el inicial
-        Promise.all([loadProjectFromIndexedDB(), loadGraphicResourcesFromDB()]).then(
-          ([saved, dbResources]) => {
-            if (!mounted) return;
-            const isSameVersion = saved && saved.version === INITIAL_PROJECT.version;
-            const base = isSameVersion && saved.walls && saved.walls.length > 0 ? saved : INITIAL_PROJECT;
-            const layerStates =
-              base.layerStates && base.layerStates.length > 0
-                ? base.layerStates
-                : INITIAL_LAYER_STATES;
-
-            const backgroundPlan = base.backgroundPlan || DEFAULT_BACKGROUND_PLAN;
-            const annotations = base.annotations && base.annotations.length > 0 ? base.annotations : INITIAL_PROJECT.annotations;
-            const trash = base.trash || [];
-
-            const existingIds = new Set<string>();
-            const combined: GraphicResource[] = [];
-
-            [
-              ...(base.graphicLibrary || []),
-              ...INITIAL_GRAPHIC_LIBRARY,
-              ...(dbResources || []),
-            ].forEach((r) => {
-              if (!existingIds.has(r.id)) {
-                existingIds.add(r.id);
-                combined.push(r);
-              }
-            });
-
-            const merged = {
-              ...base,
-              backgroundPlan,
-              annotations,
-              trash,
-              layerStates,
-              graphicLibrary: combined,
-            };
-
-            setProject(merged);
-            // Guardar en Firestore para que el proyecto compartido ya quede creado en la nube
-            saveProjectToFirestore(merged).catch(() => {});
-            isInitialLoadDoneRef.current = true;
-          }
-        );
       }
+      isInitialLoadDoneRef.current = true;
+    }).catch((err) => {
+      console.warn('Firestore initial load notice:', err);
+      isInitialLoadDoneRef.current = true;
     });
 
-    // 2. Suscripción en tiempo real a Firestore para sincronización multiusuario
+    // 3. Suscripción en tiempo real a Firestore para sincronización multiusuario
     const unsubscribe = subscribeToSharedProject((remoteProject) => {
       if (!mounted) return;
-      if (remoteProject && remoteProject.walls && remoteProject.walls.length > 0) {
+      if (remoteProject && Array.isArray(remoteProject.walls) && remoteProject.walls.length > 0) {
         isRemoteUpdateRef.current = true;
         setProject(remoteProject);
-        // Cachear en almacenamiento local
         saveProjectToIndexedDB(remoteProject).catch(() => {});
         isInitialLoadDoneRef.current = true;
       }
