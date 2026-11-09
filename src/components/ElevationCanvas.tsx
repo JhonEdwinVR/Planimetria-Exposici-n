@@ -1281,13 +1281,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
     }
 
     if (itemToPlace) {
-      setPlacementItem(itemToPlace);
-      setCursorPosCm({
-        xCm: Math.round(defaultX),
-        yCm: initialY,
-        snappedX: false,
-        snappedY: false,
-      });
+      onAddItem(itemToPlace);
     }
   };
 
@@ -1392,13 +1386,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
       zOrder: count,
     };
 
-    setPlacementItem(textToPlace);
-    setCursorPosCm({
-      xCm: Math.round(defaultX),
-      yCm: 125,
-      snappedX: false,
-      snappedY: false,
-    });
+    onAddItem(textToPlace);
   };
 
   const handleUploadFromComputer = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1477,9 +1465,9 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
       {!isPresentationMode && (
         <div
           onMouseDown={(e) => e.stopPropagation()}
-          className="h-11 px-3 bg-[#FAF8F5] border-b border-[#E6E4DD] flex items-center justify-between gap-2 z-20 shrink-0 text-xs overflow-x-auto select-none no-scrollbar"
+          className="h-11 px-3 bg-[#FAF8F5] border-b border-[#E6E4DD] flex items-center justify-between gap-2 z-30 shrink-0 text-xs relative select-none"
         >
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink min-w-0">
             <button
               onClick={onBackToPlan}
               className="text-[#737373] hover:text-[#171717] flex items-center gap-1.5 transition-colors cursor-pointer font-medium shrink-0 whitespace-nowrap"
@@ -1536,7 +1524,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
               aria-label="Seleccionar muro"
               value={wall.id}
               onChange={(e) => onSwitchWall(e.target.value)}
-              className="py-1 px-2 rounded bg-white border border-[#E6E4DD] text-[#171717] font-medium cursor-pointer max-w-[210px] sm:max-w-[240px] truncate shrink-0 text-xs"
+              className="py-1 px-2 rounded bg-white border border-[#E6E4DD] text-[#171717] font-medium cursor-pointer max-w-[210px] sm:max-w-[240px] truncate shrink text-xs"
             >
               {!filteredPartitions.some(
                 (p) => p.wallA.id === wall.id || (p.wallB && p.wallB.id === wall.id)
@@ -1678,7 +1666,13 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
             {/* Layers Dropdown */}
             <div className="relative shrink-0">
               <button
-                onClick={() => setShowLayersMenu((v) => !v)}
+                type="button"
+                onClick={() => {
+                  setShowLayersMenu((v) => !v);
+                  setShowLayoutMenu(false);
+                  setShowTextMenu(false);
+                  setShowAddMenu(false);
+                }}
                 className={`px-2.5 py-1 rounded border flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 whitespace-nowrap ${
                   showLayersMenu
                     ? 'bg-[#FAF8F5] border-[#2563EB] text-[#2563EB]'
@@ -1696,7 +1690,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
                     className="fixed inset-0 z-40"
                     onClick={() => setShowLayersMenu(false)}
                   />
-                  <div className="absolute right-0 mt-1.5 w-64 bg-white border border-[#E6E4DD] rounded shadow-md py-2 z-50 text-xs text-[#171717] space-y-1">
+                  <div className="absolute right-0 top-full mt-1.5 w-64 bg-white border border-[#E6E4DD] rounded-lg shadow-xl py-2 z-50 text-xs text-[#171717] space-y-1">
                     <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#737373] border-b border-[#F0EFEA]">
                       Capas de Elevación (8+)
                     </div>
@@ -1746,8 +1740,18 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
             {/* Discreet Composition / Alignment Dropdown */}
             <div className="relative shrink-0">
               <button
-                onClick={() => setShowLayoutMenu((v) => !v)}
-                className="px-2.5 py-1 rounded border border-[#E6E4DD] bg-white text-[#171717] hover:bg-[#F0EFEA] flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+                type="button"
+                onClick={() => {
+                  setShowLayoutMenu((v) => !v);
+                  setShowLayersMenu(false);
+                  setShowTextMenu(false);
+                  setShowAddMenu(false);
+                }}
+                className={`px-2.5 py-1 rounded border flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap ${
+                  showLayoutMenu
+                    ? 'bg-[#FAF8F5] border-[#2563EB] text-[#2563EB]'
+                    : 'bg-white border-[#E6E4DD] text-[#171717] hover:bg-[#F0EFEA]'
+                }`}
                 title="Distribuir y alinear elementos"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 text-[#737373]" />
@@ -1761,7 +1765,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
                     className="fixed inset-0 z-40"
                     onClick={() => setShowLayoutMenu(false)}
                   />
-                  <div className="absolute right-0 mt-1.5 w-56 bg-white border border-[#E6E4DD] rounded shadow-sm py-1.5 z-50 text-xs text-[#171717]">
+                  <div className="absolute right-0 top-full mt-1.5 w-56 bg-white border border-[#E6E4DD] rounded-lg shadow-xl py-1.5 z-50 text-xs text-[#171717]">
                     <button
                       onClick={() => {
                         setShowLayoutMenu(false);
@@ -1835,8 +1839,17 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
             <div className="relative shrink-0">
               <button
                 type="button"
-                onClick={() => setShowTextMenu((v) => !v)}
-                className="px-2.5 py-1 rounded border border-[#E6E4DD] bg-white text-[#171717] hover:bg-[#F0EFEA] font-medium flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 whitespace-nowrap"
+                onClick={() => {
+                  setShowTextMenu((v) => !v);
+                  setShowLayersMenu(false);
+                  setShowLayoutMenu(false);
+                  setShowAddMenu(false);
+                }}
+                className={`px-2.5 py-1 rounded border font-medium flex items-center gap-1.5 cursor-pointer transition-colors shrink-0 whitespace-nowrap ${
+                  showTextMenu
+                    ? 'bg-[#FAF8F5] border-[#2563EB] text-[#2563EB]'
+                    : 'bg-white border-[#E6E4DD] text-[#171717] hover:bg-[#F0EFEA]'
+                }`}
                 title="Añadir bloque de texto, cédula o nota a la pared"
               >
                 <Type className="w-3.5 h-3.5 text-[#2563EB]" />
@@ -1850,7 +1863,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
                     className="fixed inset-0 z-40"
                     onClick={() => setShowTextMenu(false)}
                   />
-                  <div className="absolute right-0 mt-1.5 w-64 bg-white border border-[#E6E4DD] rounded shadow-md py-1.5 z-50 text-xs text-[#171717]">
+                  <div className="absolute right-0 top-full mt-1.5 w-64 bg-white border border-[#E6E4DD] rounded-lg shadow-xl py-1.5 z-50 text-xs text-[#171717]">
                     <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#737373] border-b border-[#F0EFEA]">
                       Tipos de texto independiente
                     </div>
@@ -1901,8 +1914,14 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
             {/* Add Element Dropdown */}
             <div className="relative shrink-0">
               <button
-                onClick={() => setShowAddMenu((v) => !v)}
-                className="px-2.5 py-1 rounded bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
+                type="button"
+                onClick={() => {
+                  setShowAddMenu((v) => !v);
+                  setShowLayersMenu(false);
+                  setShowLayoutMenu(false);
+                  setShowTextMenu(false);
+                }}
+                className="px-2.5 py-1 rounded bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap shadow-2xs"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Agregar obra</span>
@@ -1914,7 +1933,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
                     className="fixed inset-0 z-40"
                     onClick={() => setShowAddMenu(false)}
                   />
-                  <div className="absolute right-0 mt-1.5 w-60 bg-white border border-[#E6E4DD] rounded shadow-sm py-1.5 z-50 text-xs text-[#171717]">
+                  <div className="absolute right-0 top-full mt-1.5 w-60 bg-white border border-[#E6E4DD] rounded-lg shadow-xl py-1.5 z-50 text-xs text-[#171717]">
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className="w-full px-3 py-2 text-left hover:bg-[#FAF8F5] flex items-center gap-2.5 cursor-pointer"
@@ -2054,7 +2073,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
       )}
 
       {/* MAIN ELEVATION SVG */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden z-10">
         {/* Empty state when no walls match the review filter */}
         {filteredPartitions.length === 0 && (
           <div className="absolute inset-0 z-30 bg-[#FAF8F5]/90 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center">
@@ -2490,6 +2509,15 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
                   onMouseDown={(e) => {
                     if (isSpacePressed || e.button === 1 || e.altKey) {
                       return; // Allow canvas pan
+                    }
+                    if (placementItem) {
+                      onAddItem({
+                        ...placementItem,
+                        xCm: cursorPosCm.xCm,
+                        yCm: cursorPosCm.yCm,
+                      });
+                      setPlacementItem(null);
+                      return;
                     }
                     e.stopPropagation();
                     const isMulti = e.shiftKey || e.metaKey || e.ctrlKey;

@@ -368,7 +368,7 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
       {!isPresentationMode && (
         <div
           onMouseDown={(e) => e.stopPropagation()}
-          className="h-11 px-4 bg-[#FAF8F5] border-b border-[#E6E4DD] flex items-center justify-between gap-3 z-20 shrink-0 text-xs overflow-x-auto select-none no-scrollbar"
+          className="h-11 px-4 bg-[#FAF8F5] border-b border-[#E6E4DD] flex items-center justify-between gap-3 z-30 shrink-0 text-xs relative select-none"
         >
           <div className="flex items-center gap-2 shrink-0">
             {onBackToSingleWall && (
@@ -506,19 +506,24 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
 
                   {/* Popover dropdown for individual gap overrides */}
                   {showGapsManager && (
-                    <div className="absolute top-full right-0 mt-1.5 w-72 bg-white rounded-lg border border-[#E6E4DD] shadow-xl p-3 z-50 text-xs space-y-2.5">
-                      <div className="flex items-center justify-between border-b border-[#E6E4DD] pb-1.5">
-                        <span className="font-semibold text-[#171717] text-[11px]">
-                          Separación por unión
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowGapsManager(false)}
-                          className="text-[#737373] hover:text-[#171717] text-xs font-bold cursor-pointer"
-                        >
-                          ✕
-                        </button>
-                      </div>
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowGapsManager(false)}
+                      />
+                      <div className="absolute top-full right-0 mt-1.5 w-72 bg-white rounded-lg border border-[#E6E4DD] shadow-xl p-3 z-50 text-xs space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-[#E6E4DD] pb-1.5">
+                          <span className="font-semibold text-[#171717] text-[11px]">
+                            Separación por unión
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowGapsManager(false)}
+                            className="text-[#737373] hover:text-[#171717] text-xs font-bold cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
 
                       <div className="space-y-2 max-h-60 overflow-y-auto">
                         {compositeWalls.slice(0, -1).map((w, idx) => {
@@ -604,6 +609,7 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
                         })}
                       </div>
                     </div>
+                    </>
                   )}
                 </div>
               )}
@@ -645,7 +651,7 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
       )}
 
       {/* Main Composite SVG Canvas */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden z-10">
         <svg
           ref={svgRef}
           className="w-full h-full block"
