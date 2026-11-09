@@ -66,6 +66,9 @@ export interface PlanAnnotation {
   locked: boolean;
   visible: boolean;
   zoneId?: string;
+  wallId?: string;
+  scope?: 'project' | 'zone' | 'wall' | 'item';
+  targetItemId?: string;
 }
 
 export interface TrashItem {
@@ -181,7 +184,7 @@ export interface GraphicResource {
   previewUrl: string;
   fileDataUrl: string;
   planSvgUrl?: string; // Top-down architectural CAD symbol for 2D floor plan
-  fileType: 'svg' | 'png' | 'jpg' | 'webp';
+  fileType: 'svg' | 'png' | 'jpg' | 'webp' | 'dxf';
   sourceLicense: string;
   defaultWidthCm: number;
   defaultHeightCm: number;
@@ -216,6 +219,8 @@ export interface FloorPlanElement {
   locked: boolean;
   notes?: string;
 }
+
+export type TextBlockType = 'curatorial' | 'cedula' | 'free';
 
 export interface WallItem {
   id: string;
@@ -252,6 +257,50 @@ export interface WallItem {
   depthCm?: number;
   isPendingReplacement?: boolean;
   zOrder?: number;
+
+  // Independent Museum Text & Cedula Extension
+  textType?: TextBlockType;
+  textTitle?: string;
+  textAuthor?: string;
+  textDate?: string;
+  textTechnique?: string;
+  fontFamily?: 'sans' | 'serif' | 'mono' | string;
+  fontSizePt?: number;
+  fontWeight?: 'normal' | 'medium' | 'semibold' | 'bold' | string;
+  italic?: boolean;
+  lineHeight?: number;
+  letterSpacing?: number;
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  textColor?: string;
+  showBackground?: boolean;
+  backgroundColor?: string;
+  showBorder?: boolean;
+  borderColor?: string;
+  borderWidth?: number;
+  paddingCm?: number;
+  scope?: 'project' | 'zone' | 'wall' | 'item';
+  linkedArtworkId?: string;
+}
+
+export type PresentationModeKind =
+  | 'single_wall'
+  | 'multi_wall'
+  | 'guided_tour'
+  | 'plan';
+
+export interface MultiWallCompositeConfig {
+  artistName?: string;
+  wallIds: string[];
+  visualGapCm: number; // visual separation between walls in centimeters (default 40 cm)
+  showDimensions: boolean; // default true
+  showWallNames: boolean; // default true
+  showPhysicalSeparationPill: boolean; // default true
+}
+
+export interface WallText extends WallItem {
+  type: 'text';
+  textType: TextBlockType;
 }
 
 export interface PendingVerification {

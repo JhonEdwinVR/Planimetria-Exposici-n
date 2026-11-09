@@ -197,6 +197,233 @@ export function validateWallItems(walls: Wall[], items: WallItem[]): ValidationI
   return issues;
 }
 
+export type AlignmentMode =
+  | 'left'
+  | 'center-x'
+  | 'right'
+  | 'top'
+  | 'center-y'
+  | 'bottom'
+  | 'eye-level-150';
+
+export type DistributionMode =
+  | 'distribute-h-gaps'
+  | 'distribute-h-centers'
+  | 'distribute-v-gaps'
+  | 'distribute-v-centers'
+  | 'exact-spacing-h';
+
+export type AlignmentReferenceMode = 'selection' | 'key_object' | 'wall';
+
+export interface AlignmentOptions {
+  reference?: AlignmentReferenceMode;
+  keyItemId?: string;
+  keyObjectId?: string;
+  exactSpacingCm?: number;
+}
+
+/**
+ * Advanced Illustrator/Figma style Alignment & Distribution engine.
+ * Supports references: 'selection' (default), 'key_object', and 'wall'.
+ */
+export function alignAndDistributeItems(
+  wall: Wall,
+  allItems: WallItem[],
+  targetItemIds: string[],
+  action: AlignmentMode | DistributionMode,
+  options: AlignmentOptions = {}
+): WallItem[] {
+  const wallWidthCm = wall.lengthM * 100;
+  const wallHeightCm = wall.heightM * 100;
+  const reference = options.reference || (targetItemIds.length <= 1 ? 'wall' : 'selection');
+  const effectiveKeyId = options.keyItemId || options.keyObjectId;
+  const keyItem = effectiveKeyId ? allItems.find((it) => it.id === effectiveKeyId) : undefined;
+
+  const targets = allItems.filter(
+    (it) => it.wallId === wall.id && targetItemIds.includes(it.id) && !it.locked
+  );
+  if (targets.length === 0) return allItems;
+
+  const minX = Math.min(...targets.map((t) => t.xCm));
+  const maxX = Math.max(...targets.map((t) => t.xCm + t.widthCm));
+  const minY = Math.min(...targets.map((t) => t.yCm));
+  const maxY = Math.max(...targets.map((t) => t.yCm + t.heightCm));
+  const selCenterX = minX + (maxX - minX) / 2;
+  const selCenterY = minY + (maxY - minY) / 2;
+
+  const posMap = new Map<string, { xCm?: number; yCm?: number }>();
+
+  // ALIGNMENT ACTIONS
+  if (
+    action === 'left' ||
+    action === 'center-x' ||
+    action === 'right' ||
+    action === 'top' ||
+    action === 'center-y' ||
+    action === 'bottom' ||
+    action === 'eye-level-150'
+  ) {
+    if (action === 'center-x' && reference === 'wall' && targets.length > 1) {
+      // Center entire group as a whole on the wall
+      const groupWidth = maxX - minX;
+      const shiftX = (wallWidthCm / 2) - (minX + groupWidth / 2);
+      targets.forEach((t) => {
+        posMap.set(t.id, { xCm: Number(Math.max(0, t.xCm + shiftX).toFixed(1)) });
+      });
+    } else {
+      targets.forEach((t) => {
+        // Skip moving key object if aligning to key object
+        if (reference === 'key_object' && keyItem && t.id === keyItem.id) {
+          return;
+        }
+
+        let newX = t.xCm;
+        let newY = t.yCm;
+
+        switch (action) {
+          case 'left':
+            if (reference === 'wall') newX = 0;
+            else if (reference === 'key_object' && keyItem) newX = keyItem.xCm;
+            else newX = minX;
+            break;
+          case 'center-x':
+            if (reference === 'wall') newX = (wallWidthCm - t.widthCm) / 2;
+            else if (reference === 'key_object' && keyItem)
+              newX = keyItem.xCm + (keyItem.widthCm - t.widthCm) / 2;
+            else newX = selCenterX - t.widthCm / 2;
+            break;
+          case 'right':
+            if (reference === 'wall') newX = wallWidthCm - t.widthCm;
+            else if (reference === 'key_object' && keyItem)
+              newX = keyItem.xCm + keyItem.widthCm - t.widthCm;
+            else newX = maxX - t.widthCm;
+            break;
+          case 'top':
+            if (reference === 'wall') newY = wallHeightCm - t.heightCm;
+            else if (reference === 'key_object' && keyItem)
+              newY = keyItem.yCm + keyItem.heightCm - t.heightCm;
+            else newY = maxY - t.heightCm;
+            break;
+          case 'center-y':
+            if (reference === 'wall') newY = (wallHeightCm - t.heightCm) / 2;
+            else if (reference === 'key_object' && keyItem)
+              newY = keyItem.yCm + (keyItem.heightCm - t.heightCm) / 2;
+            else newY = selCenterY - t.heightCm / 2;
+            break;
+          case 'bottom':
+            if (reference === 'wall') newY = 0;
+            else if (reference === 'key_object' && keyItem) newY = keyItem.yCm;
+            else newY = minY;
+            break;
+          case 'eye-level-150':
+            newY = Math.max(0, 150 - t.heightCm / 2);
+            break;
+        }
+
+        posMap.set(t.id, {
+          xCm: Number(newX.toFixed(1)),
+          yCm: Number(newY.toFixed(1)),
+        });
+      });
+    }
+  }
+
+  // DISTRIBUTION ACTIONS
+  else if (action === 'distribute-h-gaps' || action === 'exact-spacing-h') {
+    const sorted = [...targets].sort((a, b) => a.xCm - b.xCm);
+    if (sorted.length < 2) return allItems;
+
+    const totalWidth = sorted.reduce((sum, item) => sum + item.widthCm, 0);
+    const spacing =
+      action === 'exact-spacing-h'
+        ? Math.max(0, options.exactSpacingCm ?? wall.defaultSpacingCm ?? 10)
+        : Math.max(2, (maxX - minX - totalWidth) / (sorted.length - 1));
+
+    if (reference === 'wall') {
+      const groupWidth = totalWidth + (sorted.length - 1) * spacing;
+      let cursorX = Math.max(0, (wallWidthCm - groupWidth) / 2);
+      sorted.forEach((item) => {
+        posMap.set(item.id, { xCm: Number(cursorX.toFixed(1)) });
+        cursorX += item.widthCm + spacing;
+      });
+    } else if (reference === 'key_object' && keyItem) {
+      const keyIdx = sorted.findIndex((it) => it.id === keyItem.id);
+      if (keyIdx !== -1) {
+        // Distribute to the right of key object
+        let rCursor = keyItem.xCm + keyItem.widthCm + spacing;
+        for (let i = keyIdx + 1; i < sorted.length; i++) {
+          posMap.set(sorted[i].id, { xCm: Number(rCursor.toFixed(1)) });
+          rCursor += sorted[i].widthCm + spacing;
+        }
+        // Distribute to the left of key object
+        let lCursor = keyItem.xCm - spacing;
+        for (let i = keyIdx - 1; i >= 0; i--) {
+          const itemX = lCursor - sorted[i].widthCm;
+          posMap.set(sorted[i].id, { xCm: Number(itemX.toFixed(1)) });
+          lCursor = itemX - spacing;
+        }
+      }
+    } else {
+      let cursorX = sorted[0].xCm;
+      sorted.forEach((item, idx) => {
+        if (idx > 0) {
+          posMap.set(item.id, { xCm: Number(cursorX.toFixed(1)) });
+        }
+        cursorX += item.widthCm + spacing;
+      });
+    }
+  } else if (action === 'distribute-v-gaps') {
+    const sorted = [...targets].sort((a, b) => a.yCm - b.yCm);
+    if (sorted.length < 2) return allItems;
+
+    const totalHeight = sorted.reduce((sum, item) => sum + item.heightCm, 0);
+    const gap = Math.max(2, (maxY - minY - totalHeight) / (sorted.length - 1));
+    let cursorY = sorted[0].yCm;
+    sorted.forEach((item, idx) => {
+      if (idx > 0) {
+        posMap.set(item.id, { yCm: Number(cursorY.toFixed(1)) });
+      }
+      cursorY += item.heightCm + gap;
+    });
+  }
+
+  return allItems.map((it) => {
+    const patch = posMap.get(it.id);
+    if (!patch) return it;
+    return {
+      ...it,
+      xCm: patch.xCm !== undefined ? patch.xCm : it.xCm,
+      yCm: patch.yCm !== undefined ? patch.yCm : it.yCm,
+    };
+  });
+}
+
+/**
+ * Assigns or groups selected items under a common groupId.
+ */
+export function groupWallItems(
+  allItems: WallItem[],
+  targetItemIds: string[],
+  customGroupId?: string
+): WallItem[] {
+  const gId = customGroupId || `group-${Date.now()}`;
+  return allItems.map((it) =>
+    targetItemIds.includes(it.id) ? { ...it, groupId: gId } : it
+  );
+}
+
+/**
+ * Ungroups selected items by removing their groupId.
+ */
+export function ungroupWallItems(
+  allItems: WallItem[],
+  targetItemIds: string[]
+): WallItem[] {
+  return allItems.map((it) =>
+    targetItemIds.includes(it.id) ? { ...it, groupId: undefined } : it
+  );
+}
+
 /**
  * Automatically distributes target items horizontally across the wall with uniform equal margins.
  */

@@ -20,6 +20,7 @@ import {
   Package,
   Plus,
   RotateCw,
+  Type,
 } from 'lucide-react';
 import { optimizeImageFile } from '../utils/imageOptimization';
 import {
@@ -67,7 +68,11 @@ interface FloorPlanCanvasProps {
   onMoveWall?: (wallId: string, deltaX: number, deltaY: number) => void;
   onMoveZones?: (zoneIds: string[], deltaX: number, deltaY: number) => void;
   onUpdateZoneLabelPosition?: (zoneId: string, xM: number, yM: number) => void;
-  onUpdateAnnotation?: (annotationId: string, patch: Partial<PlanAnnotation>) => void;
+  selectedAnnotationId?: string | null;
+  onSelectAnnotation?: (id: string | null) => void;
+  onUpdateAnnotation?: (annotationId: string, patch: Partial<PlanAnnotation>, recordHistory?: boolean) => void;
+  onDeleteAnnotation?: (id: string) => void;
+  onAddAnnotation?: (pos?: { xM: number; yM: number }) => void;
   onCopyItem?: (itemId: string) => void;
   onPasteItem?: () => void;
   onDuplicateSelected?: () => void;
@@ -154,6 +159,11 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
   onFinishDrawingWall,
   onCancelDrawingWall,
   planElements = [],
+  selectedAnnotationId = null,
+  onSelectAnnotation,
+  onUpdateAnnotation,
+  onDeleteAnnotation,
+  onAddAnnotation,
   selectedPlanElementId = null,
   onSelectPlanElement,
   onUpdatePlanElement,
@@ -188,6 +198,25 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
     initWidthCm: number;
     initDepthCm: number;
   } | null>(null);
+
+  // Dragging Annotation in Floor Plan
+  const [dragAnnotationState, setDragAnnotationState] = useState<{
+    id: string;
+    startXM: number;
+    startYM: number;
+    initialXM: number;
+    initialYM: number;
+  } | null>(null);
+  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
+  const [editingAnnotationText, setEditingAnnotationText] = useState<string>('');
+  const latestAnnotationPosRef = useRef<{ id: string; xM: number; yM: number } | null>(null);
+
+  const handleSaveAnnotationText = (id: string, textToSave: string) => {
+    if (onUpdateAnnotation) {
+      onUpdateAnnotation(id, { text: textToSave }, true);
+    }
+    setEditingAnnotationId(null);
+  };
 
   // Dragging whole wall
   const [draggingWallId, setDraggingWallId] = useState<string | null>(null);
@@ -262,6 +291,33 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
+
+  // Delete key listener for selected annotation
+  useEffect(() => {
+    const handleAnnotationKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedAnnotationId && onDeleteAnnotation) {
+          onDeleteAnnotation(selectedAnnotationId);
+          onSelectAnnotation?.(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleAnnotationKeyDown);
+    return () => window.removeEventListener('keydown', handleAnnotationKeyDown);
+  }, [selectedAnnotationId, onDeleteAnnotation, onSelectAnnotation]);
+
+  // Window mouseup listener to guarantee drag states end even when releasing outside the canvas
+  useEffect(() => {
+    const handleWindowMouseUp = () => {
+      if (dragAnnotationState) {
+        handleMouseUp();
+      }
+    };
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => window.removeEventListener('mouseup', handleWindowMouseUp);
+  }, [dragAnnotationState, annotations, onUpdateAnnotation]);
 
   const fitToScreen = () => {
     if (!containerRef.current) return;
@@ -393,11 +449,35 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
       if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
         onSelectWall(null);
         onSelectPlanElement?.(null);
+        onSelectAnnotation?.(null);
       }
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    // Annotation drag
+    if (dragAnnotationState && onUpdateAnnotation) {
+      const pt = clientToMeters(e.clientX, e.clientY);
+      const dxM = pt.x - dragAnnotationState.startXM;
+      const dyM = pt.y - dragAnnotationState.startYM;
+      const nextXM = Math.round((dragAnnotationState.initialXM + dxM) * 20) / 20;
+      const nextYM = Math.round((dragAnnotationState.initialYM + dyM) * 20) / 20;
+      latestAnnotationPosRef.current = {
+        id: dragAnnotationState.id,
+        xM: Number(nextXM.toFixed(2)),
+        yM: Number(nextYM.toFixed(2)),
+      };
+      onUpdateAnnotation(
+        dragAnnotationState.id,
+        {
+          xM: Number(nextXM.toFixed(2)),
+          yM: Number(nextYM.toFixed(2)),
+        },
+        false
+      );
+      return;
+    }
+
     // FloorPlanElement move or resize
     if (draggingPlanElemState && onUpdatePlanElement) {
       const pt = clientToMeters(e.clientX, e.clientY);
@@ -524,6 +604,27 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
 
   const handleMouseUp = () => {
     setIsPanning(false);
+    if (latestAnnotationPosRef.current && onUpdateAnnotation) {
+      onUpdateAnnotation(
+        latestAnnotationPosRef.current.id,
+        {
+          xM: latestAnnotationPosRef.current.xM,
+          yM: latestAnnotationPosRef.current.yM,
+        },
+        true
+      );
+      latestAnnotationPosRef.current = null;
+    } else if (dragAnnotationState && onUpdateAnnotation) {
+      const currentAnn = annotations.find((a) => a.id === dragAnnotationState.id);
+      if (currentAnn) {
+        onUpdateAnnotation(
+          dragAnnotationState.id,
+          { xM: currentAnn.xM, yM: currentAnn.yM },
+          true
+        );
+      }
+    }
+    setDragAnnotationState(null);
     setDraggingPlanElemState(null);
     setDraggingWallId(null);
     setWallDragStart(null);
@@ -670,7 +771,7 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
           : 'cursor-default'
       }`}
     >
-      {/* Floating Left Quick-Insert HUD: Banco Virtual (Mesas, Cuadrados Decorativos, Repisas) */}
+      {/* Floating Left Quick-Insert HUD: Banco Virtual CAD & Anotaciones */}
       <div
         onMouseDown={(e) => e.stopPropagation()}
         className="absolute top-4 left-4 z-20 flex flex-wrap items-center gap-1.5 select-none"
@@ -688,50 +789,22 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
           <span>Banco Virtual CAD</span>
         </button>
 
-        {onPlaceGraphicResourceInPlan && graphicResources.length > 0 && (
-          <div className="hidden sm:flex items-center gap-1 bg-white/95 dark:bg-[#1A1F2C]/95 border border-[#E6E4DD] dark:border-[#334155] rounded-xl px-2 py-1 shadow-md text-[11px]">
-            <button
-              onClick={() => {
-                const table =
-                  graphicResources.find((r) => r.id === 'res-table-4p-square') ||
-                  graphicResources.find((r) => r.category === 'restaurant_tables');
-                if (table) onPlaceGraphicResourceInPlan(table);
-              }}
-              className="px-2 py-0.5 rounded hover:bg-blue-50 text-[#171717] hover:text-[#2563EB] font-medium flex items-center gap-1 cursor-pointer transition-colors"
-              title="Insertar mesa de restaurante en planta"
-            >
-              <Plus className="w-3 h-3 text-[#2563EB]" />
-              <span>Mesa restaurante</span>
-            </button>
-            <div className="h-3 w-px bg-[#E6E4DD]" />
-            <button
-              onClick={() => {
-                const sq =
-                  graphicResources.find((r) => r.id === 'res-decor-square-botanical') ||
-                  graphicResources.find((r) => r.category === 'decor_squares');
-                if (sq) onPlaceGraphicResourceInPlan(sq);
-              }}
-              className="px-2 py-0.5 rounded hover:bg-blue-50 text-[#171717] hover:text-[#2563EB] font-medium flex items-center gap-1 cursor-pointer transition-colors"
-              title="Insertar cuadrado donde hay decoración"
-            >
-              <Plus className="w-3 h-3 text-[#059669]" />
-              <span>Cuadrado decoración</span>
-            </button>
-            <div className="h-3 w-px bg-[#E6E4DD]" />
-            <button
-              onClick={() => {
-                const shelf =
-                  graphicResources.find((r) => r.id === 'res-shelf-floating-decor') ||
-                  graphicResources.find((r) => r.category === 'shelves');
-                if (shelf) onPlaceGraphicResourceInPlan(shelf);
-              }}
-              className="px-2 py-0.5 rounded hover:bg-blue-50 text-[#171717] hover:text-[#2563EB] font-medium flex items-center gap-1 cursor-pointer transition-colors"
-              title="Insertar repisa con decoración"
-            >
-              <Plus className="w-3 h-3 text-[#D97706]" />
-              <span>Repisa</span>
-            </button>
-          </div>
+        {onAddAnnotation && (
+          <button
+            onClick={() => {
+              const centerXM = (-(pan.x) + (containerRef.current?.clientWidth || 800) / 2) / (SCALE_PX_PER_M * zoom);
+              const centerYM = (-(pan.y) + (containerRef.current?.clientHeight || 600) / 2) / (SCALE_PX_PER_M * zoom);
+              onAddAnnotation({
+                xM: Number(Math.max(0.5, centerXM).toFixed(2)),
+                yM: Number(Math.max(0.5, centerYM).toFixed(2)),
+              });
+            }}
+            className="px-3 py-1.5 rounded-xl border shadow-md text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors bg-white/95 dark:bg-[#1A1F2C]/95 text-[#171717] dark:text-[#F8FAFC] border-[#E6E4DD] dark:border-[#334155] hover:border-[#2563EB] hover:text-[#2563EB]"
+            title="Crear nueva anotación o texto libre en el plano"
+          >
+            <Type className="w-3.5 h-3.5 text-[#2563EB]" />
+            <span>+ Anotación</span>
+          </button>
         )}
       </div>
 
@@ -1124,40 +1197,45 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
                     >
                       {zone.name}
                     </text>
-                  </g>
-                );
-              })}
 
-          {/* Independent Floor Plan Annotations */}
-          {isLayerActive('texts', layers.texts) &&
-            annotations
-              .filter((a) => a.visible)
-              .map((ann) => {
-                const lines = ann.text.split('\n');
-                return (
-                  <g
-                    key={ann.id}
-                    transform={`translate(${ann.xM * SCALE_PX_PER_M}, ${ann.yM * SCALE_PX_PER_M}) rotate(${ann.rotation})`}
-                    className="pointer-events-none select-none"
-                  >
-                    <text
-                      x="0"
-                      y="0"
-                      fill={ann.color}
-                      fontSize={ann.fontSize}
-                      fontFamily="DM Sans, sans-serif"
-                      fontWeight="500"
-                    >
-                      {lines.map((line, idx) => (
-                        <tspan
-                          key={idx}
-                          x="0"
-                          dy={idx === 0 ? 0 : ann.fontSize * 1.25}
-                        >
-                          {line}
-                        </tspan>
-                      ))}
-                    </text>
+                    {/* Discreet Text/Cedula Badge for Sector */}
+                    {(() => {
+                      const zoneTextCount = (items || []).filter(
+                        (it: WallItem) =>
+                          it.visible &&
+                          (it.type === 'text' ||
+                            it.type === 'title' ||
+                            it.type === 'description') &&
+                          (it.zoneId === zone.id ||
+                            zWalls.some((w) => w.id === it.wallId))
+                      ).length;
+                      if (zoneTextCount === 0) return null;
+                      return (
+                        <g transform={`translate(0, ${fontSize + 8})`}>
+                          <rect
+                            x={-26}
+                            y={-7}
+                            width={52}
+                            height={14}
+                            rx={7}
+                            fill="#EFF6FF"
+                            stroke="#BFDBFE"
+                            strokeWidth={0.8}
+                          />
+                          <text
+                            x={0}
+                            y={3.5}
+                            textAnchor="middle"
+                            fontSize="8"
+                            fontWeight="600"
+                            fill="#2563EB"
+                            fontFamily="DM Sans, sans-serif"
+                          >
+                            📝 {zoneTextCount} {zoneTextCount === 1 ? 'texto' : 'textos'}
+                          </text>
+                        </g>
+                      );
+                    })()}
                   </g>
                 );
               })}
@@ -2001,6 +2079,200 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               );
             })}
 
+          {/* CAPA 5: Independent Floor Plan Annotations (Top Layer for Direct Selection, Drag & Delete) */}
+          {isLayerActive('texts', layers.texts) &&
+            annotations
+              .filter((a) => a.visible !== false)
+              .map((ann) => {
+                const lines = ann.text.split('\n');
+                const isSelected = selectedAnnotationId === ann.id;
+                const isEditing = editingAnnotationId === ann.id;
+                const maxLineLen = Math.max(...lines.map((l) => l.length), 1);
+                const approxWPx = Math.max(120, maxLineLen * ((ann.fontSize || 10) * 0.58) + 28);
+                const approxHPx = Math.max(38, lines.length * ((ann.fontSize || 10) * 1.3) + 18);
+
+                return (
+                  <g
+                    key={ann.id}
+                    transform={`translate(${ann.xM * SCALE_PX_PER_M}, ${ann.yM * SCALE_PX_PER_M}) rotate(${ann.rotation || 0})`}
+                    className="cursor-move pointer-events-auto select-none"
+                    onMouseDown={(e) => {
+                      if (isEditing) return;
+                      e.stopPropagation();
+                      onSelectAnnotation?.(ann.id);
+                      if (e.button === 0) {
+                        const pt = clientToMeters(e.clientX, e.clientY);
+                        setDragAnnotationState({
+                          id: ann.id,
+                          startXM: pt.x,
+                          startYM: pt.y,
+                          initialXM: ann.xM,
+                          initialYM: ann.yM,
+                        });
+                      }
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setEditingAnnotationId(ann.id);
+                      setEditingAnnotationText(ann.text);
+                    }}
+                  >
+                    {/* Permanent Card Background: Guarantees solid click/drag target & clean contrast */}
+                    <rect
+                      x={-8}
+                      y={-(ann.fontSize || 10) - 6}
+                      width={approxWPx}
+                      height={approxHPx}
+                      rx={6}
+                      fill={isSelected ? '#EFF6FF' : '#FFFFFF'}
+                      fillOpacity={isSelected ? 0.98 : 0.92}
+                      stroke={isSelected ? '#2563EB' : '#CBD5E1'}
+                      strokeWidth={isSelected ? 1.8 : 0.9}
+                      strokeDasharray={isSelected ? '4,3' : undefined}
+                      className="transition-colors hover:stroke-[#2563EB]"
+                    />
+
+                    {/* Active Selection Details: Action Bar with Direct Edit & Delete Buttons */}
+                    {isSelected && !isEditing && (
+                      <g transform={`translate(-6, ${-(ann.fontSize || 10) - 22})`}>
+                        {/* Header container */}
+                        <rect
+                          x={0}
+                          y={0}
+                          width={Math.max(148, approxWPx + 12)}
+                          height={18}
+                          rx={9}
+                          fill="#1E293B"
+                        />
+                        {/* Title tag */}
+                        <text
+                          x={8}
+                          y={12}
+                          fontSize="8.5"
+                          fontWeight="700"
+                          fill="#93C5FD"
+                          fontFamily="DM Sans, sans-serif"
+                        >
+                          Anotación
+                        </text>
+                        {/* Edit button */}
+                        <g
+                          transform={`translate(60, 2)`}
+                          className="cursor-pointer"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            setEditingAnnotationId(ann.id);
+                            setEditingAnnotationText(ann.text);
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingAnnotationId(ann.id);
+                            setEditingAnnotationText(ann.text);
+                          }}
+                        >
+                          <rect x={0} y={0} width={44} height={14} rx={7} fill="#2563EB" />
+                          <text x={22} y={10} textAnchor="middle" fontSize="8" fontWeight="600" fill="#FFFFFF">
+                            ✎ Editar
+                          </text>
+                          <title>Editar texto directamente</title>
+                        </g>
+                        {/* Delete button */}
+                        {onDeleteAnnotation && (
+                          <g
+                            transform={`translate(${Math.max(148, approxWPx + 12) - 20}, 1)`}
+                            className="cursor-pointer"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              onDeleteAnnotation(ann.id);
+                              onSelectAnnotation?.(null);
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteAnnotation(ann.id);
+                              onSelectAnnotation?.(null);
+                            }}
+                          >
+                            <circle cx={8} cy={8} r={7} fill="#EF4444" />
+                            <text x={8} y={11} textAnchor="middle" fontSize="9" fontWeight="bold" fill="#FFFFFF">
+                              ×
+                            </text>
+                            <title>Eliminar anotación del plano</title>
+                          </g>
+                        )}
+                      </g>
+                    )}
+
+                    {/* Inline Text Editor when editing directly on canvas */}
+                    {isEditing ? (
+                      <foreignObject
+                        x={-8}
+                        y={-(ann.fontSize || 10) - 6}
+                        width={Math.max(220, approxWPx + 40)}
+                        height={Math.max(90, approxHPx + 40)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <div className="w-full h-full p-2 bg-white rounded-md border-2 border-[#2563EB] shadow-xl flex flex-col gap-1.5 z-50">
+                          <textarea
+                            autoFocus
+                            value={editingAnnotationText}
+                            onChange={(e) => setEditingAnnotationText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                handleSaveAnnotationText(ann.id, editingAnnotationText);
+                              } else if (e.key === 'Escape') {
+                                setEditingAnnotationId(null);
+                              }
+                            }}
+                            className="w-full flex-1 p-1.5 text-xs text-[#171717] font-sans border border-[#E2E8F0] rounded focus:outline-none focus:border-[#2563EB] resize-none leading-relaxed"
+                            placeholder="Escribe la anotación..."
+                          />
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] text-[#737373]">Ctrl+Enter para guardar</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditingAnnotationId(null)}
+                                className="px-2 py-0.5 text-[10px] text-[#525252] hover:bg-[#F1F5F9] rounded cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveAnnotationText(ann.id, editingAnnotationText)}
+                                className="px-2.5 py-0.5 text-[10px] font-semibold bg-[#2563EB] text-white rounded hover:bg-blue-700 cursor-pointer shadow-xs"
+                              >
+                                Guardar
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </foreignObject>
+                    ) : (
+                      /* Annotation Text Display */
+                      <text
+                        x="4"
+                        y="0"
+                        fill={ann.color || '#1E293B'}
+                        fontSize={ann.fontSize || 10}
+                        fontFamily="DM Sans, sans-serif"
+                        fontWeight="500"
+                        className="select-none pointer-events-none"
+                      >
+                        {lines.map((line, idx) => (
+                          <tspan
+                            key={idx}
+                            x="4"
+                            dy={idx === 0 ? 0 : (ann.fontSize || 10) * 1.25}
+                          >
+                            {line}
+                          </tspan>
+                        ))}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+
           {/* Marquee Selection Rectangle Box */}
           {isMarqueeSelecting && marqueeStart && marqueeCurrent && (
             <rect
@@ -2268,6 +2540,35 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               <Lock className="w-3.5 h-3.5 text-[#737373]" />
               <span>Bloquear / Desbloquear</span>
             </button>
+          )}
+
+          {onAddAnnotation && (
+            <button
+              onClick={() => {
+                const pt = clientToMeters(contextMenu.x, contextMenu.y);
+                onAddAnnotation({ xM: Number(pt.x.toFixed(2)), yM: Number(pt.y.toFixed(2)) });
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 text-left hover:bg-[#FAF8F5] flex items-center gap-2 cursor-pointer font-medium text-[#2563EB]"
+            >
+              <Type className="w-3.5 h-3.5 text-[#2563EB]" />
+              <span>Añadir anotación aquí</span>
+            </button>
+          )}
+
+          {selectedAnnotationId && onDeleteAnnotation && (
+            <div className="border-t border-[#F0EFEA] pt-1 mt-1">
+              <button
+                onClick={() => {
+                  onDeleteAnnotation(selectedAnnotationId);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 text-left text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer font-medium"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Eliminar anotación seleccionada (Supr)</span>
+              </button>
+            </div>
           )}
 
           {(onDeleteSelected || onPromptDeleteWall) && (

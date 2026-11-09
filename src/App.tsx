@@ -9,6 +9,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Minimize2,
+  PanelLeftOpen,
+  PanelRightOpen,
 } from 'lucide-react';
 import {
   BackgroundPlanSettings,
@@ -19,6 +21,7 @@ import {
   LayerState,
   LayerVisibility,
   LibraryImage,
+  PlanAnnotation,
   ProposalSnapshot,
   TrashItem,
   ViewMode,
@@ -39,6 +42,7 @@ import {
   saveGraphicResourcesToDB,
 } from './data/graphicLibrary';
 import {
+  alignAndDistributeItems,
   alignWallItems,
   autoFixWallIssues,
   createWallSegment,
@@ -47,7 +51,9 @@ import {
   distributeWithExactSpacing,
   duplicateWallOffset,
   generateRoomGeometry,
+  groupWallItems,
   splitWallSegment,
+  ungroupWallItems,
   updateWallLengthConnected,
   validateWallItems,
 } from './utils/geometryAndValidation';
@@ -67,7 +73,9 @@ import { sanitizeAndCompressProject } from './utils/imageOptimization';
 import { TopBar } from './components/TopBar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { FloorPlanCanvas } from './components/FloorPlanCanvas';
-import { ElevationCanvas } from './components/ElevationCanvas';
+import { ElevationCanvas, WallFilterMode } from './components/ElevationCanvas';
+import { MultiWallElevationCanvas } from './components/MultiWallElevationCanvas';
+import { ExhibitionPresentationView } from './components/ExhibitionPresentationView';
 import { RightInspector } from './components/RightInspector';
 import {
   CompareView,
@@ -89,12 +97,72 @@ export default function App() {
   const [past, setPast] = useState<ExhibitionProject[]>([]);
   const [future, setFuture] = useState<ExhibitionProject[]>([]);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('plan');
-  const [selectedWallId, setSelectedWallId] = useState<string | null>('wall-carlos-main');
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    try {
+      const stored = localStorage.getItem('spaguetty_view_mode') as ViewMode | null;
+      if (stored && ['plan', 'elevation', 'presentation', 'compare', 'inventory'].includes(stored)) {
+        return stored;
+      }
+    } catch {}
+    return 'plan';
+  });
+
+  const [selectedWallId, setSelectedWallIdState] = useState<string | null>(() => {
+    try {
+      const stored = localStorage.getItem('spaguetty_last_selected_wall_id');
+      return stored || 'wall-carlos-main';
+    } catch {
+      return 'wall-carlos-main';
+    }
+  });
+
+  const [lastSelectedWallId, setLastSelectedWallId] = useState<string>(() => {
+    try {
+      const stored = localStorage.getItem('spaguetty_last_selected_wall_id');
+      return stored || 'wall-carlos-main';
+    } catch {
+      return 'wall-carlos-main';
+    }
+  });
+
+  const setSelectedWallId = useCallback((id: string | null) => {
+    setSelectedWallIdState(id);
+    if (id) {
+      setLastSelectedWallId(id);
+      try {
+        localStorage.setItem('spaguetty_last_selected_wall_id', id);
+      } catch {}
+    }
+  }, []);
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode);
+    try {
+      localStorage.setItem('spaguetty_view_mode', mode);
+    } catch {}
+  }, []);
+
+  const [wallFilterMode, setWallFilterMode] = useState<WallFilterMode>(() => {
+    try {
+      const stored = localStorage.getItem('spaguetty_wall_filter_mode') as WallFilterMode | null;
+      if (stored && ['with_artworks', 'with_content', 'all'].includes(stored)) {
+        return stored;
+      }
+    } catch {}
+    return 'with_artworks';
+  });
+
+  const handleSetWallFilterMode = useCallback((mode: WallFilterMode) => {
+    setWallFilterMode(mode);
+    try {
+      localStorage.setItem('spaguetty_wall_filter_mode', mode);
+    } catch {}
+  }, []);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [selectedZoneIds, setSelectedZoneIds] = useState<string[]>([]);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [selectedPlanElementId, setSelectedPlanElementId] = useState<string | null>(null);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [isDark, setIsDark] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error' | 'pending'>('saved');
   const isRemoteUpdateRef = useRef<boolean>(false);
@@ -118,6 +186,59 @@ export default function App() {
       return true;
     }
   });
+
+  // Dynamic Resizable Panels State (Module 2: Refinamiento visual)
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('spaguetty_sidebar_width');
+      return stored ? Math.min(480, Math.max(220, Number(stored))) : 288;
+    } catch {
+      return 288;
+    }
+  });
+
+  const [rightInspectorWidth, setRightInspectorWidth] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('spaguetty_inspector_width');
+      return stored ? Math.min(500, Math.max(240, Number(stored))) : 300;
+    } catch {
+      return 300;
+    }
+  });
+
+  const [resizingSide, setResizingSide] = useState<'left' | 'right' | null>(null);
+
+  // Multi-Wall Elevation View State (Module 1: Vista conjunta de dos o más muros)
+  const [multiWallArtist, setMultiWallArtist] = useState<string | null>(null);
+
+  // Drag-to-resize listener for lateral panels
+  useEffect(() => {
+    if (!resizingSide) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (resizingSide === 'left') {
+        const newW = Math.min(480, Math.max(220, e.clientX));
+        setLeftSidebarWidth(newW);
+        try {
+          localStorage.setItem('spaguetty_sidebar_width', String(newW));
+        } catch {}
+      } else if (resizingSide === 'right') {
+        const newW = Math.min(500, Math.max(240, window.innerWidth - e.clientX));
+        setRightInspectorWidth(newW);
+        try {
+          localStorage.setItem('spaguetty_inspector_width', String(newW));
+        } catch {}
+      }
+    };
+    const handleMouseUp = () => {
+      setResizingSide(null);
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingSide]);
 
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
@@ -230,11 +351,16 @@ export default function App() {
     loadProjectFromIndexedDB().then((saved) => {
       if (!mounted) return;
       if (saved && Array.isArray(saved.walls) && saved.walls.length > 0) {
+        const loadedAnnotations = (saved.annotations && saved.annotations.length > 0
+          ? saved.annotations
+          : INITIAL_PROJECT.annotations || []
+        ).map((a) => ({ ...a, locked: false }));
+
         setProject({
           ...saved,
           backgroundPlan: saved.backgroundPlan || DEFAULT_BACKGROUND_PLAN,
           layerStates: saved.layerStates && saved.layerStates.length > 0 ? saved.layerStates : INITIAL_LAYER_STATES,
-          annotations: saved.annotations || [],
+          annotations: loadedAnnotations,
           trash: saved.trash || [],
         });
       }
@@ -244,9 +370,16 @@ export default function App() {
     loadInitialProjectFromFirestore().then((cloudProject) => {
       if (!mounted) return;
       if (cloudProject && Array.isArray(cloudProject.walls) && cloudProject.walls.length > 0) {
+        const sanitizedCloud = {
+          ...cloudProject,
+          annotations: (cloudProject.annotations && cloudProject.annotations.length > 0
+            ? cloudProject.annotations
+            : INITIAL_PROJECT.annotations || []
+          ).map((a) => ({ ...a, locked: false })),
+        };
         isRemoteUpdateRef.current = true;
-        setProject(cloudProject);
-        saveProjectToIndexedDB(cloudProject).catch(() => {});
+        setProject(sanitizedCloud);
+        saveProjectToIndexedDB(sanitizedCloud).catch(() => {});
       }
       isInitialLoadDoneRef.current = true;
     }).catch((err) => {
@@ -258,9 +391,16 @@ export default function App() {
     const unsubscribe = subscribeToSharedProject((remoteProject) => {
       if (!mounted) return;
       if (remoteProject && Array.isArray(remoteProject.walls) && remoteProject.walls.length > 0) {
+        const sanitizedRemote = {
+          ...remoteProject,
+          annotations: (remoteProject.annotations && remoteProject.annotations.length > 0
+            ? remoteProject.annotations
+            : INITIAL_PROJECT.annotations || []
+          ).map((a) => ({ ...a, locked: false })),
+        };
         isRemoteUpdateRef.current = true;
-        setProject(remoteProject);
-        saveProjectToIndexedDB(remoteProject).catch(() => {});
+        setProject(sanitizedRemote);
+        saveProjectToIndexedDB(sanitizedRemote).catch(() => {});
         isInitialLoadDoneRef.current = true;
       }
     });
@@ -534,6 +674,70 @@ export default function App() {
     [commitProjectChange]
   );
 
+  const handleUpdateAnnotation = useCallback(
+    (id: string, patch: Partial<PlanAnnotation>, recordHistory: boolean = true) => {
+      commitProjectChange(
+        (prev) => ({
+          ...prev,
+          annotations: (prev.annotations || []).map((a) =>
+            a.id === id ? { ...a, ...patch } : a
+          ),
+        }),
+        recordHistory
+      );
+    },
+    [commitProjectChange]
+  );
+
+  const handleAddAnnotation = useCallback(
+    (pos?: { xM: number; yM: number }) => {
+      const newId = `ann-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newAnn: PlanAnnotation = {
+        id: newId,
+        text: 'Nueva anotación\n(Haz clic para editar)',
+        xM: pos?.xM ?? 4.5,
+        yM: pos?.yM ?? 3.5,
+        fontSize: 10,
+        color: '#2563EB',
+        rotation: 0,
+        locked: false,
+        visible: true,
+      };
+      commitProjectChange((prev) => ({
+        ...prev,
+        annotations: [...(prev.annotations || []), newAnn],
+      }));
+      setSelectedAnnotationId(newId);
+      setSelectedWallId(null);
+      setSelectedPlanElementId(null);
+      setSelectedItemIds([]);
+      setIsRightInspectorOpen(true);
+    },
+    [commitProjectChange]
+  );
+
+  const handleDeleteAnnotation = useCallback(
+    (id: string) => {
+      const annToDelete = (project.annotations || []).find((a) => a.id === id);
+      if (!annToDelete) return;
+      const trashEntry: TrashItem = {
+        id: `trash-ann-${Date.now()}`,
+        type: 'annotation',
+        deletedAt: new Date().toISOString(),
+        name: `Anotación: ${annToDelete.text.slice(0, 25)}`,
+        description: 'Anotación eliminada del plano general',
+        data: annToDelete,
+      };
+      commitProjectChange((prev) => ({
+        ...prev,
+        annotations: (prev.annotations || []).filter((a) => a.id !== id),
+        trash: [trashEntry, ...(prev.trash || [])],
+      }));
+      setSelectedAnnotationId((prev) => (prev === id ? null : prev));
+    },
+    [project.annotations, commitProjectChange]
+  );
+
   const handleTogglePlanElementVisible = useCallback(
     (id: string) => {
       commitProjectChange((prev) => ({
@@ -622,7 +826,10 @@ export default function App() {
         e.preventDefault();
         setIsLeftSidebarOpen((o) => !o);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedPlanElementId) {
+        if (selectedAnnotationId) {
+          e.preventDefault();
+          handleDeleteAnnotation(selectedAnnotationId);
+        } else if (selectedPlanElementId) {
           e.preventDefault();
           handleDeletePlanElement(selectedPlanElementId);
         } else if (selectedItemIds.length > 0) {
@@ -639,6 +846,8 @@ export default function App() {
       } else if (e.key === 'Escape') {
         if (isCalibratingBackground) {
           setIsCalibratingBackground(false);
+        } else if (selectedAnnotationId) {
+          setSelectedAnnotationId(null);
         } else if (selectedPlanElementId) {
           setSelectedPlanElementId(null);
         } else if (selectedItemIds.length > 0) {
@@ -656,8 +865,10 @@ export default function App() {
     handleDuplicateSelected,
     handleDeleteSelected,
     handleDeletePlanElement,
+    handleDeleteAnnotation,
     handleCopyItem,
     handlePasteItem,
+    selectedAnnotationId,
     selectedPlanElementId,
     selectedItemIds,
     selectedWallId,
@@ -673,13 +884,14 @@ export default function App() {
     [project.walls, project.items]
   );
 
-  const selectedWall = useMemo(
-    () =>
-      project.walls.find((w) => w.id === selectedWallId) ||
+  const selectedWall = useMemo(() => {
+    const idToFind = selectedWallId || lastSelectedWallId;
+    return (
+      project.walls.find((w) => w.id === idToFind) ||
       project.walls[0] ||
-      null,
-    [project.walls, selectedWallId]
-  );
+      null
+    );
+  }, [project.walls, selectedWallId, lastSelectedWallId]);
 
   const selectedZone = useMemo(
     () => (selectedZoneId ? project.zones.find((z) => z.id === selectedZoneId) || null : null),
@@ -697,6 +909,14 @@ export default function App() {
         ? (project.planElements || []).find((el) => el.id === selectedPlanElementId) || null
         : null,
     [project.planElements, selectedPlanElementId]
+  );
+
+  const selectedAnnotation = useMemo(
+    () =>
+      selectedAnnotationId
+        ? (project.annotations || []).find((a) => a.id === selectedAnnotationId) || null
+        : null,
+    [project.annotations, selectedAnnotationId]
   );
 
   const unresolvedVerificationsCount = useMemo(
@@ -2338,8 +2558,13 @@ export default function App() {
         }
         viewMode={viewMode}
         onSelectViewMode={(mode) => {
-          if (mode === 'elevation' && !selectedWallId) {
-            setSelectedWallId(project.walls[0]?.id || null);
+          if (mode === 'elevation') {
+            const targetId = selectedWallId || lastSelectedWallId;
+            if (targetId && project.walls.some((w) => w.id === targetId)) {
+              setSelectedWallId(targetId);
+            } else if (project.walls.length > 0) {
+              setSelectedWallId(project.walls[0].id);
+            }
           }
           setViewMode(mode);
         }}
@@ -2414,9 +2639,11 @@ export default function App() {
 
       {/* MAIN WORKSPACE AREA */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* LEFT SIDEBAR (Collapsible) */}
+        {/* LEFT SIDEBAR (Collapsible & Resizable) */}
         {viewMode !== 'presentation' && isLeftSidebarOpen && (
           <LeftSidebar
+            width={leftSidebarWidth}
+            onToggleCollapse={() => setIsLeftSidebarOpen(false)}
             zones={project.zones}
             walls={project.walls}
             items={project.items}
@@ -2635,6 +2862,27 @@ export default function App() {
           />
         )}
 
+        {/* Left Sidebar Resize Handle (Module 2: Paneles laterales refinados) */}
+        {viewMode !== 'presentation' && isLeftSidebarOpen && (
+          <div
+            onMouseDown={() => setResizingSide('left')}
+            className="w-1 hover:w-1.5 bg-[#E6E4DD] hover:bg-[#2563EB] cursor-col-resize select-none shrink-0 transition-colors z-20"
+            title="Arrastrar para ajustar ancho del panel izquierdo"
+          />
+        )}
+
+        {/* Docked Expand Left Sidebar Tab when collapsed (Centered on lateral border to avoid toolbar collisions) */}
+        {viewMode !== 'presentation' && !isLeftSidebarOpen && (
+          <button
+            type="button"
+            onClick={() => setIsLeftSidebarOpen(true)}
+            title="Mostrar panel de espacios y biblioteca (Ctrl+B)"
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-30 h-14 w-4.5 hover:w-6 rounded-r-md bg-white border border-l-0 border-[#E6E4DD] shadow-md hover:bg-[#FAF8F5] text-[#737373] hover:text-[#2563EB] cursor-pointer transition-all flex items-center justify-center group"
+          >
+            <PanelLeftOpen className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+          </button>
+        )}
+
         {/* CENTER VIEWPORT (Expands to 100% when panels are closed) */}
         <main className="flex-1 h-full flex overflow-hidden relative">
           <AnimatePresence mode="wait">
@@ -2750,10 +2998,24 @@ export default function App() {
                     setSelectedPlanElementId(elId);
                     if (elId) {
                       setSelectedItemIds([]);
+                      setSelectedAnnotationId(null);
                     }
                   }}
                   onUpdatePlanElement={handleUpdatePlanElement}
                   onDeletePlanElement={handleDeletePlanElement}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onSelectAnnotation={(annId) => {
+                    setSelectedAnnotationId(annId);
+                    if (annId) {
+                      setSelectedPlanElementId(null);
+                      setSelectedWallId(null);
+                      setSelectedItemIds([]);
+                      setIsRightInspectorOpen(true);
+                    }
+                  }}
+                  onUpdateAnnotation={handleUpdateAnnotation}
+                  onDeleteAnnotation={handleDeleteAnnotation}
+                  onAddAnnotation={handleAddAnnotation}
                   graphicResources={project.graphicLibrary || INITIAL_GRAPHIC_LIBRARY}
                   onPlaceGraphicResourceInPlan={handlePlaceGraphicResourceInPlan}
                   onMountGraphicResourceOnWall={(res) => {
@@ -2792,86 +3054,103 @@ export default function App() {
               </motion.div>
             )}
 
-            {(viewMode === 'elevation' || viewMode === 'presentation') &&
-              selectedWall && (
-                <motion.div
-                  key={`view-elev-${selectedWall.id}-${viewMode}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="flex-1 h-full flex flex-col relative"
-                >
-                  {viewMode === 'presentation' && (
-                    <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-none">
-                      <div className="pointer-events-auto flex items-center gap-2 px-3.5 py-1.5 rounded bg-white dark:bg-[#1A1F2C] border border-[#E6E4DD] dark:border-[#2D3748] text-xs text-[#171717] dark:text-[#F8FAFC] shadow-sm">
-                        <span className="font-medium">
-                          {selectedWall.participant}
-                        </span>
-                        <span className="text-[#737373]">·</span>
-                        <span className="text-[#737373] dark:text-[#94A3B8]">
-                          {selectedWall.name} ({selectedWall.lengthM.toFixed(2)} ×{' '}
-                          {selectedWall.heightM.toFixed(2)} m)
-                        </span>
-                      </div>
+            {/* PRESENTATION MODE VIEW (Module 3: Reconstrucción del modo presentación) */}
+            {viewMode === 'presentation' && (
+              <motion.div
+                key="view-presentation"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex-1 h-full flex flex-col relative"
+              >
+                <ExhibitionPresentationView
+                  project={project}
+                  activeWallId={selectedWallId}
+                  activeZoneId={selectedZoneId}
+                  onExit={() => setViewMode(selectedWallId ? 'elevation' : 'plan')}
+                  onSelectWall={(wId) => {
+                    setSelectedWallId(wId);
+                    const w = project.walls.find((x) => x.id === wId);
+                    if (w) setSelectedZoneId(w.zoneId);
+                  }}
+                />
+              </motion.div>
+            )}
 
-                      <div className="pointer-events-auto flex items-center gap-1.5">
-                        <button
-                          onClick={() => {
-                            const idx = project.walls.findIndex(
-                              (w) => w.id === selectedWall.id
-                            );
-                            const prevWall =
-                              project.walls[
-                                (idx - 1 + project.walls.length) %
-                                  project.walls.length
-                              ];
-                            setSelectedWallId(prevWall.id);
-                          }}
-                          className="px-2.5 py-1.5 rounded bg-white dark:bg-[#1A1F2C] border border-[#E6E4DD] dark:border-[#2D3748] text-xs flex items-center gap-1 hover:bg-[#FAF8F5] dark:hover:bg-[#252D3D] cursor-pointer shadow-xs"
-                        >
-                          <ChevronLeft className="w-3.5 h-3.5" />
-                          <span>Anterior</span>
-                        </button>
+            {/* ELEVATION VIEW (Single Wall & Multi-Wall Artist Composite) */}
+            {viewMode === 'elevation' && selectedWall && (
+              <motion.div
+                key={`view-elev-${multiWallArtist || 'single'}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex-1 h-full flex flex-col relative"
+              >
+                {multiWallArtist ? (
+                  <MultiWallElevationCanvas
+                    walls={project.walls.filter((w) => {
+                      const matchesArtist =
+                        (w.participant &&
+                          w.participant.trim().toLowerCase() ===
+                            multiWallArtist.trim().toLowerCase()) ||
+                        (w.secondaryParticipant &&
+                          w.secondaryParticipant.trim().toLowerCase() ===
+                            multiWallArtist.trim().toLowerCase()) ||
+                        w.name
+                          .toLowerCase()
+                          .includes(multiWallArtist.toLowerCase().trim());
 
-                        <button
-                          onClick={() => {
-                            const idx = project.walls.findIndex(
-                              (w) => w.id === selectedWall.id
-                            );
-                            const nextWall =
-                              project.walls[(idx + 1) % project.walls.length];
-                            setSelectedWallId(nextWall.id);
-                          }}
-                          className="px-2.5 py-1.5 rounded bg-white dark:bg-[#1A1F2C] border border-[#E6E4DD] dark:border-[#2D3748] text-xs flex items-center gap-1 hover:bg-[#FAF8F5] dark:hover:bg-[#252D3D] cursor-pointer shadow-xs"
-                        >
-                          <span>Siguiente</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          onClick={() => setViewMode('elevation')}
-                          className="px-3 py-1.5 rounded bg-[#2563EB] text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow-xs"
-                        >
-                          <Minimize2 className="w-3.5 h-3.5" />
-                          <span>Salir</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
+                      if (!matchesArtist) return false;
+                      return project.items.some(
+                        (it) => it.wallId === w.id && it.visible
+                      );
+                    })}
+                    allWalls={project.walls}
+                    items={project.items}
+                    zones={project.zones}
+                    artistName={multiWallArtist}
+                    selectedItemIds={selectedItemIds}
+                    layerStates={project.layerStates || INITIAL_LAYER_STATES}
+                    onSelectItem={(itemId, multi) => {
+                      setSelectedItemIds((prev) =>
+                        multi
+                          ? prev.includes(itemId)
+                            ? prev.filter((id) => id !== itemId)
+                            : [...prev, itemId]
+                          : [itemId]
+                      );
+                    }}
+                    onClearSelection={() => setSelectedItemIds([])}
+                    onUpdateItem={handleUpdateItem}
+                    onBackToSingleWall={() => setMultiWallArtist(null)}
+                    onSelectWall={(wId) => {
+                      setSelectedWallId(wId);
+                      setMultiWallArtist(null);
+                    }}
+                    onSwitchArtist={(artist) => setMultiWallArtist(artist)}
+                  />
+                ) : (
                   <ElevationCanvas
                     svgRef={activeSvgRef}
                     wall={selectedWall}
                     allWalls={project.walls}
                     items={project.items}
+                    zones={project.zones}
+                    wallFilterMode={wallFilterMode}
+                    onSetWallFilterMode={handleSetWallFilterMode}
+                    onOpenMultiWallView={(artistName) => setMultiWallArtist(artistName)}
+                    onOpenSpaceAdmin={() =>
+                      handleOpenSpaceAdmin(selectedZone || project.zones[0])
+                    }
                     layers={layers}
                     layerStates={project.layerStates || INITIAL_LAYER_STATES}
                     graphicResources={project.graphicLibrary || INITIAL_GRAPHIC_LIBRARY}
                     selectedItemIds={selectedItemIds}
                     validationIssues={validationIssues}
                     isDark={isDark}
-                    isPresentationMode={viewMode === 'presentation'}
+                    isPresentationMode={false}
                     onBackToPlan={() => {
                       setViewMode('plan');
                       setSelectedItemIds([]);
@@ -2944,6 +3223,36 @@ export default function App() {
                         ),
                       }));
                     }}
+                    onAlignAndDistribute={(action, options) => {
+                      const ids =
+                        selectedItemIds.length > 0
+                          ? selectedItemIds
+                          : getTargetItemIdsOnWall(selectedWall);
+                      commitProjectChange((prev) => ({
+                        ...prev,
+                        items: alignAndDistributeItems(
+                          selectedWall,
+                          prev.items,
+                          ids,
+                          action,
+                          options
+                        ),
+                      }));
+                    }}
+                    onGroupSelected={() => {
+                      if (selectedItemIds.length < 2) return;
+                      commitProjectChange((prev) => ({
+                        ...prev,
+                        items: groupWallItems(prev.items, selectedItemIds),
+                      }));
+                    }}
+                    onUngroupSelected={() => {
+                      if (selectedItemIds.length === 0) return;
+                      commitProjectChange((prev) => ({
+                        ...prev,
+                        items: ungroupWallItems(prev.items, selectedItemIds),
+                      }));
+                    }}
                     onAutoFixWall={() => {
                       commitProjectChange((prev) => ({
                         ...prev,
@@ -2951,8 +3260,9 @@ export default function App() {
                       }));
                     }}
                   />
-                </motion.div>
-              )}
+                )}
+              </motion.div>
+            )}
 
             {viewMode === 'compare' && (
               <motion.div
@@ -3017,9 +3327,32 @@ export default function App() {
           </AnimatePresence>
         </main>
 
-        {/* RIGHT INSPECTOR PANEL (Contextual & Collapsible) */}
+        {/* Right Inspector Resize Handle (Module 2: Paneles laterales refinados) */}
+        {(viewMode === 'plan' || viewMode === 'elevation') && isRightInspectorOpen && (
+          <div
+            onMouseDown={() => setResizingSide('right')}
+            className="w-1 hover:w-1.5 bg-[#E6E4DD] hover:bg-[#2563EB] cursor-col-resize select-none shrink-0 transition-colors z-20"
+            title="Arrastrar para ajustar ancho del inspector"
+          />
+        )}
+
+        {/* Docked Expand Right Inspector Tab when collapsed (Centered on lateral border to avoid toolbar collisions) */}
+        {(viewMode === 'plan' || viewMode === 'elevation') && !isRightInspectorOpen && (
+          <button
+            type="button"
+            onClick={() => setIsRightInspectorOpen(true)}
+            title="Mostrar inspector de propiedades"
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-30 h-14 w-4.5 hover:w-6 rounded-l-md bg-white border border-r-0 border-[#E6E4DD] shadow-md hover:bg-[#FAF8F5] text-[#737373] hover:text-[#2563EB] cursor-pointer transition-all flex items-center justify-center group"
+          >
+            <PanelRightOpen className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+          </button>
+        )}
+
+        {/* RIGHT INSPECTOR PANEL (Contextual, Collapsible & Resizable) */}
         {(viewMode === 'plan' || viewMode === 'elevation') && isRightInspectorOpen && (
           <RightInspector
+            width={rightInspectorWidth}
+            onToggleCollapse={() => setIsRightInspectorOpen(false)}
             viewMode={viewMode}
             selectedWall={
               selectedWallId
@@ -3102,6 +3435,9 @@ export default function App() {
             onUpdatePlanElement={handleUpdatePlanElement}
             onDuplicatePlanElement={handleDuplicatePlanElement}
             onDeletePlanElement={handleDeletePlanElement}
+            selectedAnnotation={selectedAnnotation}
+            onUpdateAnnotation={handleUpdateAnnotation}
+            onDeleteAnnotation={handleDeleteAnnotation}
           />
         )}
       </div>

@@ -137,8 +137,10 @@ export async function sanitizeAndCompressProject(project: ExhibitionProject): Pr
   // 3. Comprimir biblioteca
   if (Array.isArray(cloned.library)) {
     for (const lib of cloned.library) {
-      if (lib.imageUrl) {
-        lib.imageUrl = await compressBase64Image(lib.imageUrl, 800, 0.7);
+      if ((lib as any).dataUrl) {
+        (lib as any).dataUrl = await compressBase64Image((lib as any).dataUrl, 800, 0.7);
+      } else if ((lib as any).imageUrl) {
+        (lib as any).imageUrl = await compressBase64Image((lib as any).imageUrl, 800, 0.7);
       }
     }
   }

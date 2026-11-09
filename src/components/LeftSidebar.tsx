@@ -28,6 +28,7 @@ import {
   Ruler,
   Maximize2,
   ArrowLeftRight,
+  PanelLeftClose,
 } from 'lucide-react';
 import { optimizeImageFile } from '../utils/imageOptimization';
 import {
@@ -106,6 +107,8 @@ interface LeftSidebarProps {
   onPromptDeleteWall?: (wall: Wall) => void;
   onDeleteItem?: (itemId: string) => void;
   onFlipWallDirection?: (wallId: string) => void;
+  width?: number;
+  onToggleCollapse?: () => void;
 }
 
 const PRESET_ZONE_COLORS = [
@@ -129,6 +132,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   backgroundPlan,
   selectedWallId,
   selectedItemIds,
+  width,
+  onToggleCollapse,
   onSelectWall,
   onSelectItem,
   onToggleZoneExpand,
@@ -256,8 +261,13 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   };
 
   return (
-    <aside className="w-64 sm:w-72 bg-[#FAF8F5] border-r border-[#E6E4DD] flex flex-col h-full select-none shrink-0 text-[#171717] transition-all">
-      {/* Navigation Sub-Tabs: Sectores | Capas | Biblioteca */}
+    <aside
+      style={width ? { width: `${width}px` } : undefined}
+      className={`${
+        width ? '' : 'w-64 sm:w-72'
+      } bg-[#FAF8F5] border-r border-[#E6E4DD] flex flex-col h-full select-none shrink-0 text-[#171717] transition-all relative overflow-hidden`}
+    >
+      {/* Navigation Sub-Tabs: Sectores | Capas | Biblioteca | Collapse */}
       <div className="flex items-center border-b border-[#E6E4DD] text-xs font-medium bg-[#F5F3ED]">
         <button
           onClick={() => setActiveTab('zones')}
@@ -292,8 +302,19 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           }`}
         >
           <ImageIcon className="w-3.5 h-3.5" />
-          <span>Biblioteca</span>
+          <span>Obras ({library.length})</span>
         </button>
+
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title="Minimizar panel izquierdo"
+            className="p-2.5 text-[#737373] hover:text-[#171717] hover:bg-[#E6E4DD]/40 transition-colors cursor-pointer"
+          >
+            <PanelLeftClose className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* TAB 1: ZONES / SECTORES */}

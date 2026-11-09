@@ -150,12 +150,30 @@ export function exportTechnicalSheetPdf(
       ? `${wall.heightM.toFixed(2)} m (Confirmada)`
       : `${wall.heightM.toFixed(2)} m (Provisional / Por definir)`;
 
+    const artCount = wallItems.filter(
+      (it) =>
+        it.type === 'photo' ||
+        it.type === 'frame' ||
+        it.type === 'portrait_stand' ||
+        it.category === 'artworks'
+    ).length;
+    const textCount = wallItems.filter(
+      (it) =>
+        it.type === 'text' ||
+        it.type === 'title' ||
+        it.type === 'description'
+    ).length;
+    const countSummary =
+      textCount > 0
+        ? `OBRAS: ${artCount}  TEXTOS: ${textCount}`
+        : `OBRAS: ${artCount}`;
+
     doc.setFont('courier', 'bold');
-    doc.setFontSize(9.5);
+    doc.setFontSize(9);
     doc.setTextColor(28, 25, 23);
     doc.text(
-      `ANCHO: ${wall.lengthM.toFixed(2)} m (${Math.round(wall.lengthM * 100)} cm)   ALTURA: ${heightLabel}   OBRAS: ${wallItems.length}`,
-      165,
+      `ANCHO: ${wall.lengthM.toFixed(2)}m (${Math.round(wall.lengthM * 100)}cm)  ALT: ${heightLabel}  ${countSummary}`,
+      155,
       19
     );
     doc.setFont('courier', 'normal');
@@ -281,7 +299,13 @@ export function exportTechnicalSheetPdf(
       doc.setTextColor(28, 25, 23);
       doc.text(it.code || `#${idx + 1}`, 19, tableY + 4.3);
       doc.text(it.name.slice(0, 34), 38, tableY + 4.3);
-      doc.text(it.type.toUpperCase(), 105, tableY + 4.3);
+      const typeLabel =
+        it.type === 'text'
+          ? `TEXTO (${it.textType || 'sala'})`
+          : it.category === 'artworks' || it.type === 'photo'
+          ? 'FOTOGRAFÍA'
+          : it.type.toUpperCase();
+      doc.text(typeLabel.slice(0, 15), 105, tableY + 4.3);
       doc.text(`${it.widthCm} × ${it.heightCm} cm`, 132, tableY + 4.3);
       doc.text(`${it.xCm.toFixed(1)} cm`, 170, tableY + 4.3);
       doc.text(`${it.yCm.toFixed(1)} cm`, 202, tableY + 4.3);

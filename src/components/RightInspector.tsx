@@ -26,6 +26,8 @@ import {
   FolderOpen,
   PenTool,
   Scissors,
+  Type,
+  PanelRightClose,
 } from 'lucide-react';
 import { optimizeImageFile } from '../utils/imageOptimization';
 import {
@@ -34,6 +36,8 @@ import {
   FrameStyle,
   LayerKey,
   PendingVerification,
+  PlanAnnotation,
+  TextBlockType,
   ValidationIssue,
   ViewMode,
   Wall,
@@ -93,6 +97,11 @@ interface RightInspectorProps {
   onUpdatePlanElement?: (id: string, patch: Partial<FloorPlanElement>) => void;
   onDuplicatePlanElement?: (id: string) => void;
   onDeletePlanElement?: (id: string) => void;
+  selectedAnnotation?: PlanAnnotation | null;
+  onUpdateAnnotation?: (id: string, patch: Partial<PlanAnnotation>) => void;
+  onDeleteAnnotation?: (id: string) => void;
+  width?: number;
+  onToggleCollapse?: () => void;
 }
 
 const MATERIALS: { value: WallMaterial; label: string }[] = [
@@ -184,6 +193,11 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   onUpdatePlanElement,
   onDuplicatePlanElement,
   onDeletePlanElement,
+  selectedAnnotation,
+  onUpdateAnnotation,
+  onDeleteAnnotation,
+  width,
+  onToggleCollapse,
 }) => {
   const [moreWallOpen, setMoreWallOpen] = useState(false);
   const [moreItemOpen, setMoreItemOpen] = useState(false);
@@ -193,6 +207,225 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   const refBlueprintInputRef = useRef<HTMLInputElement>(null);
 
   const primaryItem = selectedItems.length === 1 ? selectedItems[0] : null;
+
+  // 0. FLOOR PLAN ANNOTATION (ANOTACIÓN DE TEXTO EN PLANO GENERAL)
+  if (selectedAnnotation && onUpdateAnnotation) {
+    return (
+      <aside
+        style={width ? { width: `${width}px` } : undefined}
+        className={`${
+          width ? '' : 'w-72'
+        } bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]`}
+      >
+        {/* Header & Type */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#2563EB] bg-[#2563EB]/10 px-2 py-0.5 rounded">
+              Anotación del Plano
+            </span>
+            {selectedAnnotation.locked && (
+              <span className="text-[10px] font-mono text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                Bloqueado
+              </span>
+            )}
+          </div>
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="p-1 rounded hover:bg-[#EFECE6] text-[#737373] hover:text-[#171717] cursor-pointer"
+              title="Cerrar inspector"
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Live Textarea Content */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-[#171717]">
+            Contenido del texto
+          </label>
+          <textarea
+            rows={5}
+            value={selectedAnnotation.text}
+            onChange={(e) =>
+              onUpdateAnnotation(selectedAnnotation.id, { text: e.target.value })
+            }
+            placeholder="Escribe la anotación aquí..."
+            className="w-full px-3 py-2 text-xs font-sans rounded-md bg-white border border-[#E6E4DD] focus:outline-none focus:border-[#2563EB] resize-y leading-relaxed"
+          />
+          <span className="text-[10px] text-[#737373] block">
+            Admite múltiples líneas y saltos con Enter.
+          </span>
+        </div>
+
+        {/* Tipografía y Color */}
+        <div className="space-y-3 border-t border-[#E6E4DD] pt-4">
+          <span className="text-xs font-medium text-[#171717] block">
+            Tipografía y Color
+          </span>
+
+          <div>
+            <div className="flex items-center justify-between text-[11px] text-[#737373] mb-1">
+              <span>Tamaño de fuente</span>
+              <span className="font-mono text-[#171717]">{selectedAnnotation.fontSize} px</span>
+            </div>
+            <input
+              type="range"
+              min={7}
+              max={36}
+              step={0.5}
+              value={selectedAnnotation.fontSize}
+              onChange={(e) =>
+                onUpdateAnnotation(selectedAnnotation.id, {
+                  fontSize: Number(e.target.value),
+                })
+              }
+              className="w-full accent-[#2563EB] cursor-pointer"
+            />
+          </div>
+
+          <div>
+            <span className="block text-[11px] text-[#737373] mb-1.5">
+              Color del texto
+            </span>
+            <div className="flex items-center gap-2">
+              {[
+                { label: 'Azul', hex: '#2563EB' },
+                { label: 'Oscuro', hex: '#171717' },
+                { label: 'Gris', hex: '#525252' },
+                { label: 'Rojo', hex: '#DC2626' },
+                { label: 'Verde', hex: '#059669' },
+                { label: 'Ámbar', hex: '#D97706' },
+              ].map((c) => (
+                <button
+                  key={c.hex}
+                  type="button"
+                  onClick={() =>
+                    onUpdateAnnotation(selectedAnnotation.id, { color: c.hex })
+                  }
+                  className={`w-6 h-6 rounded-full border transition-transform cursor-pointer ${
+                    selectedAnnotation.color === c.hex
+                      ? 'scale-115 ring-2 ring-[#2563EB] border-white'
+                      : 'border-[#E6E4DD] hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: c.hex }}
+                  title={c.label}
+                />
+              ))}
+              <input
+                type="color"
+                value={selectedAnnotation.color || '#2563EB'}
+                onChange={(e) =>
+                  onUpdateAnnotation(selectedAnnotation.id, { color: e.target.value })
+                }
+                className="w-7 h-7 rounded border border-[#E6E4DD] cursor-pointer p-0 bg-transparent"
+                title="Color personalizado"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Posición en el plano */}
+        <div className="space-y-3 border-t border-[#E6E4DD] pt-4">
+          <span className="text-xs font-medium text-[#171717] block">
+            Posición en el plano
+          </span>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <span className="block text-[11px] text-[#737373] mb-1">
+                Posición X (m)
+              </span>
+              <input
+                type="number"
+                step={0.05}
+                value={selectedAnnotation.xM}
+                onChange={(e) =>
+                  onUpdateAnnotation(selectedAnnotation.id, {
+                    xM: Number(e.target.value),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 text-xs font-mono rounded bg-white border border-[#E6E4DD] focus:outline-none focus:border-[#2563EB]"
+              />
+            </div>
+            <div>
+              <span className="block text-[11px] text-[#737373] mb-1">
+                Posición Y (m)
+              </span>
+              <input
+                type="number"
+                step={0.05}
+                value={selectedAnnotation.yM}
+                onChange={(e) =>
+                  onUpdateAnnotation(selectedAnnotation.id, {
+                    yM: Number(e.target.value),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 text-xs font-mono rounded bg-white border border-[#E6E4DD] focus:outline-none focus:border-[#2563EB]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <span className="block text-[11px] text-[#737373] mb-1.5">
+              Rotación
+            </span>
+            <div className="grid grid-cols-4 gap-1">
+              {[0, 90, 180, 270].map((deg) => (
+                <button
+                  key={deg}
+                  type="button"
+                  onClick={() =>
+                    onUpdateAnnotation(selectedAnnotation.id, { rotation: deg })
+                  }
+                  className={`py-1 text-[11px] font-mono rounded border cursor-pointer transition-colors ${
+                    selectedAnnotation.rotation === deg
+                      ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                      : 'bg-white border-[#E6E4DD] text-[#525252] hover:bg-[#F0EFEA]'
+                  }`}
+                >
+                  {deg}°
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Estado y Acciones */}
+        <div className="space-y-2 border-t border-[#E6E4DD] pt-4">
+          <span className="text-xs font-medium text-[#171717] block">
+            Opciones
+          </span>
+
+          <div className="flex items-center justify-between py-1">
+            <span className="text-xs text-[#525252]">Bloquear posición</span>
+            <input
+              type="checkbox"
+              checked={selectedAnnotation.locked}
+              onChange={(e) =>
+                onUpdateAnnotation(selectedAnnotation.id, { locked: e.target.checked })
+              }
+              className="accent-[#2563EB] cursor-pointer"
+            />
+          </div>
+
+          {onDeleteAnnotation && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => onDeleteAnnotation(selectedAnnotation.id)}
+                className="w-full py-2 px-3 rounded bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Eliminar anotación del plano</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+    );
+  }
 
   // 0. FLOOR PLAN ELEMENT (MESA DE RESTAURANTE, CUADRADO DECORACIÓN, REPISA, MOBILIARIO EN PLANTA)
   if (selectedPlanElement && onUpdatePlanElement) {
@@ -206,7 +439,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
         : 'Elemento en Planta';
 
     return (
-      <aside className="w-72 bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]">
+      <aside
+        style={width ? { width: `${width}px` } : undefined}
+        className={`${
+          width ? '' : 'w-72'
+        } bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]`}
+      >
         {/* Header & Preview */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -474,10 +712,579 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     );
   }
 
-  // 1. PHOTOGRAPH OR GRAPHIC RESOURCE SELECTED
+  // 1. PHOTOGRAPH, TEXT OR GRAPHIC RESOURCE SELECTED
   if (selectedItems.length > 0) {
     const itemIds = selectedItems.map((i) => i.id);
     const activeItem = primaryItem || selectedItems[0];
+
+    const isText =
+      activeItem.type === 'text' ||
+      activeItem.type === 'title' ||
+      activeItem.type === 'description' ||
+      !!activeItem.textType;
+
+    // Dedicated Independent Text Block & Cedula Inspector
+    if (isText && primaryItem) {
+      const currentTextType: TextBlockType =
+        primaryItem.textType ||
+        (primaryItem.type === 'title'
+          ? 'free'
+          : primaryItem.type === 'description'
+          ? 'cedula'
+          : 'curatorial');
+
+      return (
+        <aside
+        style={width ? { width: `${width}px` } : undefined}
+        className={`${
+          width ? '' : 'w-72'
+        } bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]`}
+      >
+          {/* Header & Category Badge */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#2563EB] bg-[#2563EB]/10 px-2 py-0.5 rounded">
+                {currentTextType === 'curatorial'
+                  ? 'Texto Curatorial'
+                  : currentTextType === 'cedula'
+                  ? 'Cédula de Obra'
+                  : 'Texto Independiente'}
+              </span>
+              <span className="text-[10px] font-mono text-[#737373]">
+                {primaryItem.widthCm}×{primaryItem.heightCm} cm
+              </span>
+            </div>
+            <div className="text-[11px] text-[#737373]">
+              Objeto textual independiente en pared. No contabilizado en inventario de fotos.
+            </div>
+          </div>
+
+          {/* Type Selector (Curatorial / Cédula / Libre) */}
+          <div className="space-y-1.5 border-t border-[#E6E4DD] pt-4">
+            <label className="block text-xs font-medium text-[#171717]">Tipo de texto</label>
+            <div className="grid grid-cols-3 gap-1 bg-[#EFECE6] p-0.5 rounded text-[11px]">
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateItem(primaryItem.id, {
+                    textType: 'curatorial',
+                    fontFamily: primaryItem.fontFamily || 'serif',
+                    fontSizePt: primaryItem.fontSizePt || 14,
+                    lineHeight: primaryItem.lineHeight || 1.55,
+                  })
+                }
+                className={`py-1 px-1 rounded text-center cursor-pointer transition-colors ${
+                  currentTextType === 'curatorial'
+                    ? 'bg-white font-semibold text-[#2563EB] shadow-xs'
+                    : 'text-[#737373] hover:text-[#171717]'
+                }`}
+              >
+                Curatorial
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateItem(primaryItem.id, {
+                    textType: 'cedula',
+                    fontFamily: primaryItem.fontFamily || 'sans',
+                    fontSizePt: primaryItem.fontSizePt || 10,
+                    lineHeight: primaryItem.lineHeight || 1.35,
+                  })
+                }
+                className={`py-1 px-1 rounded text-center cursor-pointer transition-colors ${
+                  currentTextType === 'cedula'
+                    ? 'bg-white font-semibold text-[#2563EB] shadow-xs'
+                    : 'text-[#737373] hover:text-[#171717]'
+                }`}
+              >
+                Cédula
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateItem(primaryItem.id, {
+                    textType: 'free',
+                    fontFamily: primaryItem.fontFamily || 'sans',
+                    fontSizePt: primaryItem.fontSizePt || 11,
+                  })
+                }
+                className={`py-1 px-1 rounded text-center cursor-pointer transition-colors ${
+                  currentTextType === 'free'
+                    ? 'bg-white font-semibold text-[#2563EB] shadow-xs'
+                    : 'text-[#737373] hover:text-[#171717]'
+                }`}
+              >
+                Libre
+              </button>
+            </div>
+          </div>
+
+          {/* Content Fields */}
+          <div className="space-y-3 border-t border-[#E6E4DD] pt-4">
+            <div>
+              <label className="block text-xs text-[#737373] mb-1">Título / Encabezado</label>
+              <input
+                type="text"
+                value={primaryItem.textTitle ?? primaryItem.name}
+                onChange={(e) =>
+                  onUpdateItem(primaryItem.id, {
+                    textTitle: e.target.value,
+                    name: e.target.value || primaryItem.name,
+                  })
+                }
+                placeholder="Título del texto o pieza..."
+                className="w-full px-2.5 py-1.5 text-xs rounded bg-white border border-[#E6E4DD] text-[#171717] focus:outline-none focus:border-[#2563EB]"
+              />
+            </div>
+
+            {currentTextType === 'cedula' && (
+              <>
+                <div>
+                  <label className="block text-xs text-[#737373] mb-1">Autor / Fotógrafo</label>
+                  <input
+                    type="text"
+                    value={primaryItem.textAuthor || ''}
+                    onChange={(e) =>
+                      onUpdateItem(primaryItem.id, { textAuthor: e.target.value })
+                    }
+                    placeholder="Nombre del autor..."
+                    className="w-full px-2.5 py-1.5 text-xs rounded bg-white border border-[#E6E4DD] text-[#171717] focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-[#737373] mb-1">Año / Fecha</label>
+                    <input
+                      type="text"
+                      value={primaryItem.textDate || ''}
+                      onChange={(e) =>
+                        onUpdateItem(primaryItem.id, { textDate: e.target.value })
+                      }
+                      placeholder="Ej: 2024"
+                      className="w-full px-2 py-1.5 text-xs rounded bg-white border border-[#E6E4DD] text-[#171717] focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[#737373] mb-1">Técnica</label>
+                    <input
+                      type="text"
+                      value={primaryItem.textTechnique || ''}
+                      onChange={(e) =>
+                        onUpdateItem(primaryItem.id, { textTechnique: e.target.value })
+                      }
+                      placeholder="Impresión fine-art..."
+                      className="w-full px-2 py-1.5 text-xs rounded bg-white border border-[#E6E4DD] text-[#171717] focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-xs text-[#737373] mb-1">
+                {currentTextType === 'curatorial'
+                  ? 'Texto curatorial / Explicación'
+                  : currentTextType === 'cedula'
+                  ? 'Descripción o notas de obra'
+                  : 'Contenido del texto'}
+              </label>
+              <textarea
+                rows={5}
+                value={primaryItem.textContent ?? primaryItem.description}
+                onChange={(e) =>
+                  onUpdateItem(primaryItem.id, {
+                    textContent: e.target.value,
+                    description: e.target.value,
+                  })
+                }
+                placeholder="Escribe el cuerpo del texto aquí..."
+                className="w-full px-2.5 py-1.5 text-xs rounded bg-white border border-[#E6E4DD] text-[#171717] focus:outline-none focus:border-[#2563EB] leading-relaxed resize-y"
+              />
+            </div>
+          </div>
+
+          {/* Typography Panel */}
+          <div className="space-y-3 border-t border-[#E6E4DD] pt-4">
+            <span className="text-xs font-medium text-[#171717] flex items-center gap-1.5">
+              <Type className="w-3.5 h-3.5 text-[#2563EB]" />
+              <span>Propiedades tipográficas</span>
+            </span>
+
+            {/* Font Family */}
+            <div className="grid grid-cols-3 gap-1 bg-[#EFECE6] p-0.5 rounded text-[11px]">
+              <button
+                type="button"
+                onClick={() => onUpdateItem(primaryItem.id, { fontFamily: 'sans' })}
+                className={`py-1 px-1 rounded text-center cursor-pointer transition-colors ${
+                  (primaryItem.fontFamily || 'sans') === 'sans'
+                    ? 'bg-white font-semibold text-[#171717] shadow-xs'
+                    : 'text-[#737373] hover:text-[#171717]'
+                }`}
+              >
+                Sans serif
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdateItem(primaryItem.id, { fontFamily: 'serif' })}
+                className={`py-1 px-1 rounded text-center cursor-pointer font-serif transition-colors ${
+                  primaryItem.fontFamily === 'serif'
+                    ? 'bg-white font-semibold text-[#171717] shadow-xs'
+                    : 'text-[#737373] hover:text-[#171717]'
+                }`}
+              >
+                Serif
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdateItem(primaryItem.id, { fontFamily: 'mono' })}
+                className={`py-1 px-1 rounded text-center cursor-pointer font-mono transition-colors ${
+                  primaryItem.fontFamily === 'mono'
+                    ? 'bg-white font-semibold text-[#171717] shadow-xs'
+                    : 'text-[#737373] hover:text-[#171717]'
+                }`}
+              >
+                Monospace
+              </button>
+            </div>
+
+            {/* Font Size & Weight */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="block text-[11px] text-[#737373] mb-1">Tamaño (pt)</span>
+                <input
+                  type="number"
+                  min={8}
+                  max={72}
+                  value={primaryItem.fontSizePt || 11}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      fontSizePt: Math.max(8, Number(e.target.value)),
+                    })
+                  }
+                  className="w-full px-2 py-1 text-xs font-mono rounded bg-white border border-[#E6E4DD]"
+                />
+              </div>
+
+              <div>
+                <span className="block text-[11px] text-[#737373] mb-1">Peso</span>
+                <select
+                  value={primaryItem.fontWeight || 'normal'}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, { fontWeight: e.target.value })
+                  }
+                  className="w-full px-2 py-1 text-xs rounded bg-white border border-[#E6E4DD]"
+                >
+                  <option value="normal">Normal (400)</option>
+                  <option value="medium">Medio (500)</option>
+                  <option value="semibold">Seminegrita (600)</option>
+                  <option value="bold">Negrita (700)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Italic & Line Height */}
+            <div className="grid grid-cols-2 gap-2 items-center">
+              <div>
+                <span className="block text-[11px] text-[#737373] mb-1">Interlineado</span>
+                <select
+                  value={primaryItem.lineHeight || 1.4}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      lineHeight: Number(e.target.value),
+                    })
+                  }
+                  className="w-full px-2 py-1 text-xs rounded bg-white border border-[#E6E4DD]"
+                >
+                  <option value={1.1}>Compacto (1.1)</option>
+                  <option value={1.25}>Ajustado (1.25)</option>
+                  <option value={1.4}>Normal (1.4)</option>
+                  <option value={1.55}>Editorial (1.55)</option>
+                  <option value={1.8}>Amplio (1.8)</option>
+                </select>
+              </div>
+
+              <div>
+                <span className="block text-[11px] text-[#737373] mb-1">Estilo</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateItem(primaryItem.id, { italic: !primaryItem.italic })
+                  }
+                  className={`w-full py-1 px-2 rounded text-xs border flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                    primaryItem.italic
+                      ? 'bg-[#2563EB] text-white border-[#2563EB]'
+                      : 'bg-white border-[#E6E4DD] text-[#171717] hover:bg-[#F0EFEA]'
+                  }`}
+                >
+                  <span className="italic font-serif font-bold text-sm">I</span>
+                  <span>Cursiva</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Alignment */}
+            <div className="space-y-1.5">
+              <span className="block text-[11px] text-[#737373]">Alineación</span>
+              <div className="grid grid-cols-4 gap-1 bg-[#EFECE6] p-0.5 rounded text-[11px]">
+                {(['left', 'center', 'right', 'justify'] as const).map((align) => (
+                  <button
+                    key={align}
+                    type="button"
+                    onClick={() =>
+                      onUpdateItem(primaryItem.id, { textAlign: align })
+                    }
+                    className={`py-1 rounded text-center cursor-pointer capitalize transition-colors ${
+                      (primaryItem.textAlign || 'left') === align
+                        ? 'bg-white font-semibold text-[#171717] shadow-xs'
+                        : 'text-[#737373] hover:text-[#171717]'
+                    }`}
+                  >
+                    {align === 'left'
+                      ? 'Izq.'
+                      : align === 'center'
+                      ? 'Centro'
+                      : align === 'right'
+                      ? 'Der.'
+                      : 'Just.'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Text Color Picker & Presets */}
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-[#737373]">Color de texto</span>
+              <div className="flex items-center gap-1.5">
+                {['#171717', '#404040', '#737373', '#2563EB', '#DC2626'].map((col) => (
+                  <button
+                    key={col}
+                    type="button"
+                    onClick={() => onUpdateItem(primaryItem.id, { textColor: col })}
+                    className="w-4 h-4 rounded-full border border-black/10 cursor-pointer"
+                    style={{ backgroundColor: col }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={primaryItem.textColor || '#171717'}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, { textColor: e.target.value })
+                  }
+                  className="w-5 h-5 rounded cursor-pointer border-none bg-transparent"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Physical Dimensions (cm) */}
+          <div className="space-y-2 border-t border-[#E6E4DD] pt-4">
+            <span className="text-xs font-medium text-[#171717]">
+              Dimensiones del bloque (cm)
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="block text-[11px] text-[#737373] mb-1">Ancho (cm)</span>
+                <input
+                  type="number"
+                  min={10}
+                  max={400}
+                  value={primaryItem.widthCm}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      widthCm: Math.max(10, Number(e.target.value)),
+                    })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded bg-white border border-[#E6E4DD]"
+                />
+              </div>
+              <div>
+                <span className="block text-[11px] text-[#737373] mb-1">Alto (cm)</span>
+                <input
+                  type="number"
+                  min={5}
+                  max={300}
+                  value={primaryItem.heightCm}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      heightCm: Math.max(5, Number(e.target.value)),
+                    })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded bg-white border border-[#E6E4DD]"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <span className="block text-[11px] text-[#737373] mb-1">X (cm)</span>
+                <input
+                  type="number"
+                  value={Math.round(primaryItem.xCm)}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      xCm: Number(e.target.value),
+                    })
+                  }
+                  className="w-full px-2 py-1 text-xs font-mono rounded bg-white border border-[#E6E4DD]"
+                />
+              </div>
+              <div>
+                <span className="block text-[11px] text-[#737373] mb-1">Y suelo (cm)</span>
+                <input
+                  type="number"
+                  value={Math.round(primaryItem.yCm)}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      yCm: Number(e.target.value),
+                    })
+                  }
+                  className="w-full px-2 py-1 text-xs font-mono rounded bg-white border border-[#E6E4DD]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Optional Background & Border Container */}
+          <div className="space-y-2.5 border-t border-[#E6E4DD] pt-4">
+            <span className="text-xs font-medium text-[#171717]">
+              Fondo y borde opcionales
+            </span>
+            <label className="flex items-center justify-between text-xs text-[#737373] cursor-pointer">
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={primaryItem.showBackground || false}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      showBackground: e.target.checked,
+                    })
+                  }
+                  className="accent-[#2563EB]"
+                />
+                <span>Activar fondo</span>
+              </span>
+              {primaryItem.showBackground && (
+                <input
+                  type="color"
+                  value={primaryItem.backgroundColor || '#FFFFFF'}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      backgroundColor: e.target.value,
+                    })
+                  }
+                  className="w-5 h-5 rounded cursor-pointer border-none bg-transparent"
+                />
+              )}
+            </label>
+
+            <label className="flex items-center justify-between text-xs text-[#737373] cursor-pointer">
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={primaryItem.showBorder || false}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      showBorder: e.target.checked,
+                    })
+                  }
+                  className="accent-[#2563EB]"
+                />
+                <span>Activar borde</span>
+              </span>
+              {primaryItem.showBorder && (
+                <input
+                  type="color"
+                  value={primaryItem.borderColor || '#E6E4DD'}
+                  onChange={(e) =>
+                    onUpdateItem(primaryItem.id, {
+                      borderColor: e.target.value,
+                    })
+                  }
+                  className="w-5 h-5 rounded cursor-pointer border-none bg-transparent"
+                />
+              )}
+            </label>
+          </div>
+
+          {/* Wall Reassignment (Trasladar a otro muro) */}
+          {allWalls && allWalls.length > 1 && (
+            <div className="space-y-1.5 border-t border-[#E6E4DD] pt-4">
+              <label className="block text-xs font-medium text-[#171717]">
+                Muro asignado (Trasladar)
+              </label>
+              <select
+                value={primaryItem.wallId}
+                onChange={(e) => {
+                  const targetWallId = e.target.value;
+                  const targetWall = allWalls.find((w) => w.id === targetWallId);
+                  onUpdateItem(primaryItem.id, {
+                    wallId: targetWallId,
+                    zoneId: targetWall ? targetWall.zoneId : primaryItem.zoneId,
+                  });
+                }}
+                className="w-full px-2.5 py-1.5 text-xs rounded bg-white border border-[#E6E4DD] text-[#171717] cursor-pointer truncate"
+              >
+                {allWalls.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} ({w.participant})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-[#737373]">
+                El texto se conserva intacto con toda su tipografía y configuración al trasladarlo de pared.
+              </p>
+            </div>
+          )}
+
+          {/* Action Buttons: Duplicate, Lock, Delete */}
+          <div className="space-y-2 border-t border-[#E6E4DD] pt-4">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={onDuplicateSelected}
+                className="py-1.5 px-2 rounded border border-[#E6E4DD] bg-white hover:bg-[#FAF8F5] text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-[#737373]" />
+                <span>Duplicar</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateItem(primaryItem.id, { locked: !primaryItem.locked })
+                }
+                className={`py-1.5 px-2 rounded border text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer ${
+                  primaryItem.locked
+                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                    : 'bg-white border-[#E6E4DD] text-[#171717] hover:bg-[#FAF8F5]'
+                }`}
+              >
+                {primaryItem.locked ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Bloqueado</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-3.5 h-3.5 text-[#737373]" />
+                    <span>Bloquear</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={onDeleteSelected}
+              className="w-full py-1.5 px-2 rounded border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Eliminar texto</span>
+            </button>
+          </div>
+        </aside>
+      );
+    }
+
     const isPerson =
       activeItem.category?.startsWith('people') ||
       activeItem.name.toLowerCase().includes('escala') ||
@@ -538,7 +1345,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     };
 
     return (
-      <aside className="w-72 bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]">
+      <aside
+        style={width ? { width: `${width}px` } : undefined}
+        className={`${
+          width ? '' : 'w-72'
+        } bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]`}
+      >
         {/* Category Header & Preview */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -1149,7 +1961,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   if (selectedZoneIds.length > 1 && selectedItems.length === 0) {
     const selectedZonesList = allZones.filter((z) => selectedZoneIds.includes(z.id));
     return (
-      <aside className="w-72 bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]">
+      <aside
+        style={width ? { width: `${width}px` } : undefined}
+        className={`${
+          width ? '' : 'w-72'
+        } bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]`}
+      >
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#2563EB]">
@@ -1323,7 +2140,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     );
 
     return (
-      <aside className="w-72 bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]">
+      <aside
+        style={width ? { width: `${width}px` } : undefined}
+        className={`${
+          width ? '' : 'w-72'
+        } bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]`}
+      >
         {/* Header & Nombre / Participante */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -2031,12 +2853,70 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
   // 3. SECTOR / ZONE SELECTED
   if (selectedZone && onUpdateZone) {
+    const zoneWalls = (allWalls || []).filter((w) => w.zoneId === selectedZone.id);
+    const zoneItems = allWallItems.filter(
+      (it) => it.zoneId === selectedZone.id || zoneWalls.some((w) => w.id === it.wallId)
+    );
+
+    const wallsWithArtworks = zoneWalls.filter((w) =>
+      allWallItems.some(
+        (it) =>
+          it.wallId === w.id &&
+          it.visible &&
+          (it.type === 'photo' || it.type === 'frame' || it.category === 'artworks')
+      )
+    );
+
+    const photoItems = zoneItems.filter(
+      (it) =>
+        it.visible &&
+        (it.type === 'photo' || it.type === 'frame' || it.category === 'artworks')
+    );
+
+    const textItems = zoneItems.filter(
+      (it) =>
+        it.visible &&
+        (it.type === 'text' || it.type === 'title' || it.type === 'description')
+    );
+
+    const museographicItems = zoneItems.filter(
+      (it) =>
+        it.visible &&
+        (it.type === 'decor' ||
+          it.category === 'furniture' ||
+          it.category === 'vitrines' ||
+          it.category === 'pedestals' ||
+          it.category === 'sculptures' ||
+          it.category === 'restaurant_tables' ||
+          it.category === 'decor_squares' ||
+          it.category === 'shelves')
+    );
+
+    const mountingNotesCount = zoneWalls.filter((w) => Boolean(w.notes?.trim())).length;
+
     return (
-      <aside className="w-72 bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]">
+      <aside
+        style={width ? { width: `${width}px` } : undefined}
+        className={`${
+          width ? '' : 'w-72'
+        } bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-4 select-none shrink-0 text-[#171717]`}
+      >
         <div className="space-y-3">
-          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#737373]">
-            <Folder className="w-3.5 h-3.5 text-[#2563EB]" />
-            <span>Sector Seleccionado</span>
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-[#737373]">
+            <div className="flex items-center gap-1.5">
+              <Folder className="w-3.5 h-3.5 text-[#2563EB]" />
+              <span>Sector Seleccionado</span>
+            </div>
+            {onToggleCollapse && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                title="Minimizar inspector"
+                className="p-1 rounded text-[#737373] hover:text-[#171717] hover:bg-[#E6E4DD]/50 cursor-pointer"
+              >
+                <PanelRightClose className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -2071,6 +2951,104 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               }
               className="w-full px-2.5 py-1.5 text-xs rounded bg-white border border-[#E6E4DD] text-[#171717] focus:outline-none focus:border-[#2563EB]"
             />
+          </div>
+
+          {/* Contextual Space Summary (Module 5) */}
+          <div className="p-3 rounded-lg bg-white border border-[#E6E4DD] space-y-2">
+            <div className="text-[11px] font-semibold text-[#171717] uppercase tracking-wider flex items-center justify-between">
+              <span>Contenido del Sector</span>
+              <span className="text-[#2563EB] font-mono text-[10px]">
+                {selectedZone.participant}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5 text-xs">
+              <div className="p-2 rounded bg-[#FAF8F5] border border-[#F0EFEA]">
+                <div className="text-sm font-bold text-[#171717]">
+                  {wallsWithArtworks.length}{' '}
+                  <span className="text-[10px] font-normal text-[#737373]">
+                    / {zoneWalls.length}
+                  </span>
+                </div>
+                <div className="text-[10px] text-[#737373]">Muros con obras</div>
+              </div>
+              <div className="p-2 rounded bg-[#FAF8F5] border border-[#F0EFEA]">
+                <div className="text-sm font-bold text-[#2563EB]">{photoItems.length}</div>
+                <div className="text-[10px] text-[#737373]">Obras / Fotos</div>
+              </div>
+              <div className="p-2 rounded bg-[#FAF8F5] border border-[#F0EFEA]">
+                <div className="text-sm font-bold text-amber-700">{textItems.length}</div>
+                <div className="text-[10px] text-[#737373]">Textos y Cédulas</div>
+              </div>
+              <div className="p-2 rounded bg-[#FAF8F5] border border-[#F0EFEA]">
+                <div className="text-sm font-bold text-emerald-700">
+                  {museographicItems.length}
+                </div>
+                <div className="text-[10px] text-[#737373]">Museografía / Mob.</div>
+              </div>
+            </div>
+
+            {mountingNotesCount > 0 && (
+              <div className="text-[10px] text-[#525252] flex items-center gap-1 pt-0.5">
+                <FileText className="w-3 h-3 text-amber-600 shrink-0" />
+                <span>{mountingNotesCount} nota(s) de montaje en los muros</span>
+              </div>
+            )}
+          </div>
+
+          {/* Sector Texts & Cedulas List & Editor (Module 5) */}
+          <div className="space-y-2 border-t border-[#E6E4DD] pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#171717] flex items-center gap-1.5">
+                <Type className="w-3.5 h-3.5 text-[#2563EB]" />
+                <span>Textos y Cédulas ({textItems.length})</span>
+              </span>
+            </div>
+
+            {textItems.length === 0 ? (
+              <p className="text-[11px] text-[#737373] italic">
+                No hay textos independientes en este sector.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+                {textItems.map((txt) => {
+                  const wallName =
+                    zoneWalls.find((w) => w.id === txt.wallId)?.name || 'Muro';
+                  return (
+                    <div
+                      key={txt.id}
+                      className="p-2.5 rounded bg-white border border-[#E6E4DD] space-y-1.5 text-xs text-left"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-[#171717] truncate max-w-[140px]">
+                          {txt.textTitle || txt.name}
+                        </span>
+                        <span className="text-[9.5px] px-1.5 py-0.2 rounded font-mono bg-blue-50 text-[#2563EB]">
+                          {txt.textType === 'curatorial'
+                            ? 'Curatorial'
+                            : txt.textType === 'cedula'
+                            ? 'Cédula'
+                            : 'Libre'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[#737373] line-clamp-2 leading-relaxed">
+                        {txt.textContent || txt.description}
+                      </div>
+                      <div className="flex items-center justify-between text-[9.5px] text-[#737373] pt-1 border-t border-[#F0EFEA]">
+                        <span>En: {wallName}</span>
+                        <button
+                          type="button"
+                          onClick={() => onOpenWallElevation(txt.wallId)}
+                          className="text-[#2563EB] hover:underline cursor-pointer"
+                        >
+                          Ver en elevación →
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Quick Actions for Space */}
@@ -2223,7 +3201,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   };
 
   return (
-    <aside className="w-72 bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]">
+    <aside
+      style={width ? { width: `${width}px` } : undefined}
+      className={`${
+        width ? '' : 'w-72'
+      } bg-[#FAF8F5] border-l border-[#E6E4DD] flex flex-col h-full overflow-y-auto px-5 py-5 space-y-5 select-none shrink-0 text-[#171717]`}
+    >
       <div className="space-y-2">
         <div className="text-xs font-semibold uppercase tracking-wider text-[#737373]">
           Inspector
