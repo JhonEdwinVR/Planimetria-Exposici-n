@@ -31,6 +31,7 @@ import {
   PanelLeftClose,
 } from 'lucide-react';
 import { optimizeImageFile } from '../utils/imageOptimization';
+import { getLinkedWall } from '../utils/wallHelpers';
 import {
   BackgroundPlanSettings,
   FloorPlanElement,
@@ -755,14 +756,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                                 ? '←'
                                 : '→';
 
-                            const linkedWall = walls.find(
-                              (w) =>
-                                w.id !== wall.id &&
-                                (w.id === wall.linkedWallId ||
-                                  w.linkedWallId === wall.id ||
-                                  (w.startVertexId === wall.startVertexId &&
-                                    w.endVertexId === wall.endVertexId))
-                            );
+                            const linkedWall = getLinkedWall(wall, walls);
                             const otherZoneId =
                               linkedWall?.zoneId ||
                               (wall.secondaryZoneId !== zone.id

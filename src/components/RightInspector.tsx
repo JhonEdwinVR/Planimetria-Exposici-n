@@ -30,6 +30,7 @@ import {
   PanelRightClose,
 } from 'lucide-react';
 import { optimizeImageFile } from '../utils/imageOptimization';
+import { getLinkedWall, isWallFaceB } from '../utils/wallHelpers';
 import {
   BackgroundPlanSettings,
   FloorPlanElement,
@@ -2364,19 +2365,15 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 </span>
               </div>
               {(() => {
-                const linkedWall = allWalls.find(
-                  (w) =>
-                    w.id !== selectedWall.id &&
-                    (w.id === selectedWall.linkedWallId ||
-                      w.linkedWallId === selectedWall.id ||
-                      (w.startVertexId === selectedWall.startVertexId &&
-                        w.endVertexId === selectedWall.endVertexId))
-                );
-
+                const linkedWall = getLinkedWall(selectedWall, allWalls);
                 const currentZone = allZones.find((z) => z.id === selectedWall.zoneId);
 
                 if (linkedWall) {
                   const linkedZone = allZones.find((z) => z.id === linkedWall.zoneId);
+                  const isCurrentFaceB = isWallFaceB(selectedWall, linkedWall);
+                  const currentFaceLabel = isCurrentFaceB ? 'Cara B' : 'Cara A';
+                  const linkedFaceLabel = isCurrentFaceB ? 'Cara A' : 'Cara B';
+
                   return (
                     <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200 space-y-2.5 text-xs">
                       <div className="text-[11px] text-[#1E3A8A] leading-snug">
@@ -2385,7 +2382,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
                       {/* Cara Actual */}
                       <div className="p-1.5 rounded bg-white/90 border border-blue-100 text-[11px]">
-                        <span className="font-semibold text-[#2563EB]">Cara actual:</span>{' '}
+                        <span className="font-semibold text-[#2563EB]">Cara actual ({currentFaceLabel}):</span>{' '}
                         <span className="font-medium text-[#171717]">
                           {currentZone?.name || selectedWall.participant}
                         </span>{' '}
@@ -2395,7 +2392,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       {/* Cambiar 2da Sección (Cara Opuesta) */}
                       <div className="space-y-1">
                         <label className="block text-[10px] font-semibold uppercase tracking-wider text-[#1E3A8A]">
-                          2ª Sección (Cara opuesta / Contracara)
+                          2ª Sección (Contracara – {linkedFaceLabel})
                         </label>
                         <select
                           value={linkedWall.zoneId}
@@ -2404,11 +2401,13 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                           }}
                           className="w-full px-2 py-1.5 text-xs rounded bg-white border border-blue-200 text-[#171717] font-medium cursor-pointer"
                         >
-                          {allZones.map((z) => (
-                            <option key={z.id} value={z.id}>
-                              {z.name} ({z.participant})
-                            </option>
-                          ))}
+                          {allZones
+                            .filter((z) => z.id !== selectedWall.zoneId)
+                            .map((z) => (
+                              <option key={z.id} value={z.id}>
+                                {z.name} ({z.participant})
+                              </option>
+                            ))}
                         </select>
                       </div>
 
@@ -2445,7 +2444,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                           onClick={() => onOpenWallElevation(linkedWall.id)}
                           className="py-1.5 px-2 rounded bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-medium cursor-pointer"
                         >
-                          Elevación Cara B
+                          Elevación {linkedFaceLabel}
                         </button>
                       </div>
 
@@ -2477,11 +2476,13 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       onChange={(e) => setOppositeFaceZoneId(e.target.value)}
                       className="w-full px-2 py-1.5 text-xs rounded bg-[#FAF8F5] border border-[#E6E4DD] text-[#171717] cursor-pointer"
                     >
-                      {allZones.map((z) => (
-                        <option key={z.id} value={z.id}>
-                          2ª Sección: {z.name} ({z.participant})
-                        </option>
-                      ))}
+                      {allZones
+                        .filter((z) => z.id !== selectedWall.zoneId)
+                        .map((z) => (
+                          <option key={z.id} value={z.id}>
+                            2ª Sección: {z.name} ({z.participant})
+                          </option>
+                        ))}
                     </select>
                     <button
                       onClick={() =>

@@ -38,6 +38,7 @@ import {
   Zone,
 } from '../types/exhibition';
 import { GraphicLibraryDrawer } from './GraphicLibraryDrawer';
+import { getLinkedWall, isWallFaceB } from '../utils/wallHelpers';
 
 interface FloorPlanCanvasProps {
   svgRef: React.RefObject<SVGSVGElement | null>;
@@ -366,8 +367,32 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     const delta = e.deltaY < 0 ? 0.08 : -0.08;
     const nextZoom = Math.min(2.8, Math.max(0.3, Number((zoom + delta).toFixed(2))));
+    // Anchor zoom to cursor position so the point under the mouse stays fixed
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const scale = nextZoom / zoom;
+    setPan((prev) => ({
+      x: Math.round(mouseX - (mouseX - prev.x) * scale),
+      y: Math.round(mouseY - (mouseY - prev.y) * scale),
+    }));
+    setZoom(nextZoom);
+  };
+
+  const handleButtonZoom = (delta: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const nextZoom = Math.min(2.8, Math.max(0.3, Number((zoom + delta).toFixed(2))));
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const scale = nextZoom / zoom;
+    setPan((prev) => ({
+      x: Math.round(centerX - (centerX - prev.x) * scale),
+      y: Math.round(centerY - (centerY - prev.y) * scale),
+    }));
     setZoom(nextZoom);
   };
 
@@ -653,7 +678,8 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
           if (vs && ve) {
             const midX = (vs.x + ve.x) / 2;
             const midY = (vs.y + ve.y) / 2;
-            if (midX >= minX && midX <= maxX && midY >= minY && midY <= maxY) {
+            const inBox = (x: number, y: number) => x >= minX && x <= maxX && y >= minY && y <= maxY;
+            if (inBox(midX, midY) || inBox(vs.x, vs.y) || inBox(ve.x, ve.y)) {
               selectedWalls.push(w.id);
             }
           }
@@ -668,10 +694,22 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               const ratio = it.xCm / 100 / w.lengthM;
               const ix = vs.x + (ve.x - vs.x) * ratio;
               const iy = vs.y + (ve.y - vs.y) * ratio;
-              if (ix >= minX && ix <= maxX && iy >= minY && iy <= maxY) {
+              if (ix >= minX - 0.25 && ix <= maxX + 0.25 && iy >= minY - 0.25 && iy <= maxY + 0.25) {
                 selectedItemsList.push(it.id);
               }
             }
+          }
+        });
+
+        planElements.forEach((pe) => {
+          if (pe.xM >= minX && pe.xM <= maxX && pe.yM >= minY && pe.yM <= maxY) {
+            onSelectPlanElement?.(pe.id);
+          }
+        });
+
+        annotations.forEach((ann) => {
+          if (ann.xM >= minX && ann.xM <= maxX && ann.yM >= minY && ann.yM <= maxY) {
+            onSelectAnnotation?.(ann.id);
           }
         });
 
@@ -1301,20 +1339,12 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
               const midDimY = (dimY1 + dimY2) / 2;
 
               const showWallGeometry = isLayerActive('walls', layers.walls);
+              const linkedWall = getLinkedWall(wall, walls);
               const isSecondaryUnselectedFace =
-                Boolean(wall.faceLabel?.includes('Cara B')) && !isSelected;
+                isWallFaceB(wall, linkedWall) && !isSelected;
               const showDimensions =
                 isLayerActive('dimensions', layers.dimensions) &&
                 !isSecondaryUnselectedFace;
-
-              const linkedWall = walls.find(
-                (w) =>
-                  w.id !== wall.id &&
-                  (w.id === wall.linkedWallId ||
-                    w.linkedWallId === wall.id ||
-                    (w.startVertexId === wall.startVertexId &&
-                      w.endVertexId === wall.endVertexId))
-              );
 
               return (
                 <g key={wall.id}>
@@ -2607,9 +2637,7 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2 py-1 rounded bg-white/95 border border-[#E6E4DD] text-xs text-[#171717] shadow-sm"
       >
         <button
-          onClick={() =>
-            setZoom((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))))
-          }
+          onClick={() => handleButtonZoom(-0.1)}
           title="Alejar plano"
           className="p-1 rounded hover:bg-[#FAF8F5] text-[#737373] hover:text-[#171717] cursor-pointer"
         >
@@ -2621,9 +2649,7 @@ export const FloorPlanCanvas: React.FC<FloorPlanCanvasProps> = ({
         </span>
 
         <button
-          onClick={() =>
-            setZoom((z) => Math.min(2.8, Number((z + 0.1).toFixed(2))))
-          }
+          onClick={() => handleButtonZoom(0.1)}
           title="Acercar plano"
           className="p-1 rounded hover:bg-[#FAF8F5] text-[#737373] hover:text-[#171717] cursor-pointer"
         >

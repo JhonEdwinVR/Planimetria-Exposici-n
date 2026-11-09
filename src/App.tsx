@@ -70,6 +70,12 @@ import {
   subscribeToSharedProject,
 } from './utils/firebase';
 import { sanitizeAndCompressProject } from './utils/imageOptimization';
+import {
+  getOppositeSide,
+  getLinkedWall,
+  isWallFaceB,
+  getPhysicalWallGroup,
+} from './utils/wallHelpers';
 import { TopBar } from './components/TopBar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { FloorPlanCanvas } from './components/FloorPlanCanvas';
@@ -1871,13 +1877,20 @@ export default function App() {
         if (!wall || wall.locked) return prev;
 
         // Include any double-sided linked walls sharing the same physical structure
-        const movingWallGroupIds = new Set<string>([wall.id]);
+        const physicalGroup = getPhysicalWallGroup(wall, prev.walls);
+        const movingWallGroupIds = new Set<string>(physicalGroup.map((w) => w.id));
+
         prev.walls.forEach((w) => {
           if (
-            w.linkedWallId === wall.id ||
-            wall.linkedWallId === w.id ||
-            (w.startVertexId === wall.startVertexId &&
-              w.endVertexId === wall.endVertexId)
+            physicalGroup.some(
+              (mw) =>
+                w.linkedWallId === mw.id ||
+                mw.linkedWallId === w.id ||
+                ((w.startVertexId === mw.startVertexId &&
+                  w.endVertexId === mw.endVertexId) ||
+                  (w.startVertexId === mw.endVertexId &&
+                    w.endVertexId === mw.startVertexId))
+            )
           ) {
             movingWallGroupIds.add(w.id);
           }
@@ -1942,11 +1955,17 @@ export default function App() {
           );
         }
 
-        const nextWalls = prev.walls.map((w) =>
-          movingWallGroupIds.has(w.id)
-            ? { ...w, startVertexId: newStartId, endVertexId: newEndId }
-            : w
-        );
+        const nextWalls = prev.walls.map((w) => {
+          if (!movingWallGroupIds.has(w.id)) return w;
+          const isReversed =
+            w.startVertexId === wall.endVertexId &&
+            w.endVertexId === wall.startVertexId;
+          return {
+            ...w,
+            startVertexId: isReversed ? newEndId : newStartId,
+            endVertexId: isReversed ? newStartId : newEndId,
+          };
+        });
 
         return {
           ...prev,
@@ -2136,15 +2155,6 @@ export default function App() {
     }));
   };
 
-  const getOppositeSide = (
-    side: 'top' | 'bottom' | 'left' | 'right'
-  ): 'top' | 'bottom' | 'left' | 'right' => {
-    if (side === 'top') return 'bottom';
-    if (side === 'bottom') return 'top';
-    if (side === 'left') return 'right';
-    return 'left';
-  };
-
   const handleFlipWallDirection = useCallback(
     (wallId: string) => {
       commitProjectChange((prev) => {
@@ -2156,18 +2166,35 @@ export default function App() {
             ? Math.abs(target.dimOffset || 22)
             : -Math.abs(target.dimOffset || 22);
 
+        const linked = getLinkedWall(target, prev.walls);
+        const linkedNextSide = linked ? getOppositeSide(nextSide) : undefined;
+        const linkedNextDimOffset =
+          linked && linkedNextSide
+            ? linkedNextSide === 'bottom' || linkedNextSide === 'right'
+              ? Math.abs(linked.dimOffset || 22)
+              : -Math.abs(linked.dimOffset || 22)
+            : undefined;
+
         return {
           ...prev,
-          walls: prev.walls.map((w) =>
-            w.id === wallId
-              ? { ...w, normalSide: nextSide, dimOffset: nextDimOffset }
-              : w
-          ),
-          items: prev.items.map((it) =>
-            it.wallId === wallId
-              ? { ...it, normalSide: getOppositeSide(it.normalSide || target.normalSide) }
-              : it
-          ),
+          walls: prev.walls.map((w) => {
+            if (w.id === wallId) {
+              return { ...w, normalSide: nextSide, dimOffset: nextDimOffset };
+            }
+            if (linked && w.id === linked.id && linkedNextSide && linkedNextDimOffset !== undefined) {
+              return { ...w, normalSide: linkedNextSide, dimOffset: linkedNextDimOffset };
+            }
+            return w;
+          }),
+          items: prev.items.map((it) => {
+            if (it.wallId === wallId) {
+              return { ...it, normalSide: getOppositeSide(it.normalSide || target.normalSide) };
+            }
+            if (linked && it.wallId === linked.id) {
+              return { ...it, normalSide: getOppositeSide(it.normalSide || linked.normalSide) };
+            }
+            return it;
+          }),
         };
       });
     },
@@ -2201,16 +2228,10 @@ export default function App() {
       if (!sourceWall || !targetZone) return;
 
       // Check if an opposite face already exists
-      const existingOpposite = project.walls.find(
-        (w) =>
-          w.id !== wallId &&
-          (w.id === sourceWall.linkedWallId ||
-            w.linkedWallId === wallId ||
-            (w.startVertexId === sourceWall.startVertexId &&
-              w.endVertexId === sourceWall.endVertexId))
-      );
+      const existingOpposite = getLinkedWall(sourceWall, project.walls);
 
       if (existingOpposite) {
+        const sourceIsFaceB = isWallFaceB(sourceWall, existingOpposite);
         const cleanBaseName = sourceWall.name.replace(/ \(Contracara.*\)$/i, '');
         commitProjectChange((prev) => ({
           ...prev,
@@ -2225,11 +2246,11 @@ export default function App() {
                 ...w,
                 zoneId: targetZone.id,
                 participant: targetZone.participant,
-                name: `${cleanBaseName} (Contracara – ${targetZone.name})`,
+                name: sourceIsFaceB ? cleanBaseName : `${cleanBaseName} (Contracara – ${targetZone.name})`,
                 linkedWallId: sourceWall.id,
                 secondaryZoneId: sourceWall.zoneId,
                 secondaryParticipant: sourceWall.participant,
-                faceLabel: 'Cara B (Posterior)',
+                faceLabel: sourceIsFaceB ? 'Cara A (Frontal)' : 'Cara B (Posterior)',
               };
             }
             if (w.id === sourceWall.id) {
@@ -2238,7 +2259,7 @@ export default function App() {
                 linkedWallId: existingOpposite.id,
                 secondaryZoneId: targetZone.id,
                 secondaryParticipant: targetZone.participant,
-                faceLabel: 'Cara A (Frontal)',
+                faceLabel: sourceIsFaceB ? 'Cara B (Posterior)' : 'Cara A (Frontal)',
               };
             }
             return w;
@@ -2300,17 +2321,10 @@ export default function App() {
       commitProjectChange((prev) => {
         const wall = prev.walls.find((w) => w.id === wallId);
         if (!wall) return prev;
-        const linkedWall = prev.walls.find(
-          (w) =>
-            w.id !== wallId &&
-            (w.id === wall.linkedWallId ||
-              w.linkedWallId === wallId ||
-              (w.startVertexId === wall.startVertexId &&
-                w.endVertexId === wall.endVertexId))
-        );
+        const linkedWall = getLinkedWall(wall, prev.walls);
 
         const wallToRemoveId =
-          wall.faceLabel?.includes('Cara B') && linkedWall
+          isWallFaceB(wall, linkedWall) && linkedWall
             ? wall.id
             : linkedWall?.id;
         const wallToKeepId =
@@ -2337,6 +2351,8 @@ export default function App() {
           setSelectedWallId(wallToKeepId);
         }
 
+        const wallToKeep = prev.walls.find((w) => w.id === wallToKeepId);
+
         return {
           ...prev,
           walls: prev.walls
@@ -2354,7 +2370,11 @@ export default function App() {
             ),
           items: prev.items.map((it) =>
             it.wallId === wallToRemoveId
-              ? { ...it, wallId: 'unassigned' as any }
+              ? {
+                  ...it,
+                  wallId: wallToKeepId,
+                  zoneId: wallToKeep?.zoneId || it.zoneId,
+                }
               : it
           ),
         };

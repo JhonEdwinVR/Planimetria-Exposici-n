@@ -289,6 +289,9 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
 
   // Mouse interaction for Panning
   const handleMouseDownCanvas = (e: React.MouseEvent) => {
+    if (editingGapKey) {
+      setEditingGapKey(null);
+    }
     if (dragState) return;
     if (isSpacePressed || e.button === 1 || e.altKey || (e.buttons & 4)) {
       setIsPanning(true);
@@ -344,25 +347,37 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     const delta = e.deltaY < 0 ? 0.06 : -0.06;
-    setZoom((z) => Math.min(2.5, Math.max(0.2, Number((z + delta).toFixed(2)))));
+    const nextZoom = Math.min(2.5, Math.max(0.2, Number((zoom + delta).toFixed(2))));
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const scale = nextZoom / zoom;
+    setPan((prev) => ({
+      x: Math.round(mouseX - (mouseX - prev.x) * scale),
+      y: Math.round(mouseY - (mouseY - prev.y) * scale),
+    }));
+    setZoom(nextZoom);
+  };
+
+  const handleButtonZoom = (delta: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const nextZoom = Math.min(2.5, Math.max(0.2, Number((zoom + delta).toFixed(2))));
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const scale = nextZoom / zoom;
+    setPan((prev) => ({
+      x: Math.round(centerX - (centerX - prev.x) * scale),
+      y: Math.round(centerY - (centerY - prev.y) * scale),
+    }));
+    setZoom(nextZoom);
   };
 
   return (
     <div
-      ref={containerRef}
-      onWheel={handleWheel}
-      onMouseDown={handleMouseDownCanvas}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      className={`relative flex-1 h-full overflow-hidden bg-[#FAF8F5] select-none flex flex-col ${
-        isSpacePressed
-          ? isPanning
-            ? 'cursor-grabbing'
-            : 'cursor-grab'
-          : 'cursor-default'
-      }`}
+      className="relative flex-1 h-full overflow-hidden bg-[#FAF8F5] select-none flex flex-col"
     >
       {/* Top Header Toolbar for Multi-Wall Mode */}
       {!isPresentationMode && (
@@ -651,7 +666,21 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
       )}
 
       {/* Main Composite SVG Canvas */}
-      <div className="relative flex-1 overflow-hidden z-10">
+      <div
+        ref={containerRef}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDownCanvas}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        className={`relative flex-1 overflow-hidden z-10 ${
+          isSpacePressed
+            ? isPanning
+              ? 'cursor-grabbing'
+              : 'cursor-grab'
+            : 'cursor-default'
+        }`}
+      >
         <svg
           ref={svgRef}
           className="w-full h-full block"
@@ -1128,140 +1157,53 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
                     );
                   })}
 
-                  {/* Physical Separation Pillar / Retorno between this wall and next */}
-                  {wallIndex < wallLayout.length - 1 && (() => {
-                    const nextWall = wallLayout[wallIndex + 1].wall;
-                    const gapKey = `${wall.id}__${nextWall.id}`;
-                    const gapAfterCm = layout.gapAfterCm;
-                    const gapAfterPx = gapAfterCm * PX_PER_CM;
+                  {/* Physical Separation Column Hatch between this wall and next */}
+                  {wallIndex < wallLayout.length - 1 && layout.gapAfterCm > 0 && (
+                    <g transform={`translate(${widthPx}, 0)`}>
+                      <rect
+                        x={0}
+                        y={topYPx}
+                        width={layout.gapAfterCm * PX_PER_CM}
+                        height={heightPx}
+                        fill="url(#multi-pat-separation-hatch)"
+                        stroke="#D4D4D4"
+                        strokeWidth="0.8"
+                        strokeDasharray="3,3"
+                      />
+                    </g>
+                  )}
+                </g>
+              );
+            })}
 
-                    if (gapAfterCm > 0) {
-                      return (
-                        <g transform={`translate(${widthPx}, 0)`}>
-                          {/* Architectural Column or Void Hatch */}
-                          <rect
-                            x={0}
-                            y={topYPx}
-                            width={gapAfterPx}
-                            height={heightPx}
-                            fill="url(#multi-pat-separation-hatch)"
-                            stroke="#D4D4D4"
-                            strokeWidth="0.8"
-                            strokeDasharray="3,3"
-                          />
+            {/* OVERLAY LAYER: Separation Badges & Popovers (rendered after all walls so nothing ever cuts them off) */}
+            {showSeparationPill && !isPresentationMode && (
+              <g className="separation-controls-overlay">
+                {wallLayout.map((layout, wallIndex) => {
+                  if (wallIndex >= wallLayout.length - 1) return null;
+                  const nextWall = wallLayout[wallIndex + 1].wall;
+                  const gapKey = `${layout.wall.id}__${nextWall.id}`;
+                  const gapAfterCm = layout.gapAfterCm;
+                  const gapAfterPx = gapAfterCm * PX_PER_CM;
+                  const seamXPx = layout.startXPx + layout.widthPx + gapAfterPx / 2;
+                  const isEditing = editingGapKey === gapKey;
 
-                          {/* Separation Dimension Badge with Direct Editable Value */}
-                          {showSeparationPill && (
-                            <g transform={`translate(${gapAfterPx / 2}, ${maxHPx / 2})`}>
-                              {editingGapKey === gapKey ? (
-                                <foreignObject x={-65} y={-32} width={130} height={64}>
-                                  <div className="w-full h-full bg-white rounded-lg border-2 border-[#2563EB] shadow-xl p-1.5 flex flex-col items-center justify-between select-none">
-                                    <div className="flex items-center gap-1">
-                                      <input
-                                        type="number"
-                                        autoFocus
-                                        min={0}
-                                        max={300}
-                                        step={5}
-                                        value={gapInputValue}
-                                        onChange={(e) => setGapInputValue(Number(e.target.value) || 0)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            setCustomGaps((prev) => ({ ...prev, [gapKey]: gapInputValue }));
-                                            setEditingGapKey(null);
-                                          } else if (e.key === 'Escape') {
-                                            setEditingGapKey(null);
-                                          }
-                                        }}
-                                        className="w-14 text-center font-mono font-bold text-xs bg-[#F4F4F5] rounded border border-[#CBD5E1] p-0.5 outline-hidden"
-                                      />
-                                      <span className="text-[10px] text-[#525252]">cm</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setCustomGaps((prev) => ({ ...prev, [gapKey]: gapInputValue }));
-                                          setEditingGapKey(null);
-                                        }}
-                                        className="px-1.5 py-0.5 bg-[#2563EB] text-white rounded text-[10px] font-semibold cursor-pointer"
-                                      >
-                                        ✓
-                                      </button>
-                                    </div>
-                                    <div className="flex items-center gap-1 w-full justify-center">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setCustomGaps((prev) => ({ ...prev, [gapKey]: 0 }));
-                                          setEditingGapKey(null);
-                                        }}
-                                        className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 text-emerald-800 font-medium cursor-pointer"
-                                      >
-                                        Pegar (0)
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setCustomGaps((prev) => ({ ...prev, [gapKey]: 45 }));
-                                          setEditingGapKey(null);
-                                        }}
-                                        className="px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-800 font-medium cursor-pointer"
-                                      >
-                                        Columna (45)
-                                      </button>
-                                    </div>
-                                  </div>
-                                </foreignObject>
-                              ) : (
-                                <g
-                                  className="cursor-pointer"
-                                  onClick={() => {
-                                    setEditingGapKey(gapKey);
-                                    setGapInputValue(gapAfterCm);
-                                  }}
-                                  onDoubleClick={() => {
-                                    setCustomGaps((prev) => ({
-                                      ...prev,
-                                      [gapKey]: gapAfterCm === 0 ? 45 : 0,
-                                    }));
-                                  }}
-                                >
-                                  <title>Separación de {gapAfterCm} cm. Clic para editar cm exactos. Doble clic para alternar con 0 cm.</title>
-                                  <rect
-                                    x={-45}
-                                    y={-12}
-                                    width={90}
-                                    height={24}
-                                    rx={12}
-                                    fill="#FFFFFF"
-                                    stroke="#2563EB"
-                                    strokeWidth="1.2"
-                                    className="shadow-xs hover:fill-blue-50 transition-colors"
-                                  />
-                                  <text
-                                    x={0}
-                                    y={4}
-                                    textAnchor="middle"
-                                    fontSize="9"
-                                    fontWeight="600"
-                                    fill="#2563EB"
-                                    fontFamily="JetBrains Mono, monospace"
-                                  >
-                                    ⟷ {gapAfterCm} cm
-                                  </text>
-                                </g>
-                              )}
-                            </g>
-                          )}
-                        </g>
-                      );
-                    }
-
-                    // Gap is 0 cm (walls are touching / "pegadas")
-                    return showSeparationPill ? (
-                      <g transform={`translate(${widthPx}, ${maxHPx / 2})`}>
-                        {editingGapKey === gapKey ? (
-                          <foreignObject x={-65} y={-32} width={130} height={64}>
-                            <div className="w-full h-full bg-white rounded-lg border-2 border-emerald-600 shadow-xl p-1.5 flex flex-col items-center justify-between select-none">
+                  if (gapAfterCm > 0) {
+                    return (
+                      <g key={`sep-${gapKey}`} transform={`translate(${seamXPx}, ${maxHPx / 2})`}>
+                        {isEditing ? (
+                          <foreignObject
+                            x={-75}
+                            y={-36}
+                            width={150}
+                            height={72}
+                            className="overflow-visible"
+                          >
+                            <div
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full h-full bg-white rounded-lg border-2 border-[#2563EB] shadow-2xl p-1.5 flex flex-col items-center justify-between select-none"
+                            >
                               <div className="flex items-center gap-1">
                                 <input
                                   type="number"
@@ -1288,7 +1230,7 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
                                     setCustomGaps((prev) => ({ ...prev, [gapKey]: gapInputValue }));
                                     setEditingGapKey(null);
                                   }}
-                                  className="px-1.5 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-semibold cursor-pointer"
+                                  className="px-1.5 py-0.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded text-[10px] font-semibold cursor-pointer"
                                 >
                                   ✓
                                 </button>
@@ -1300,7 +1242,7 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
                                     setCustomGaps((prev) => ({ ...prev, [gapKey]: 0 }));
                                     setEditingGapKey(null);
                                   }}
-                                  className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 text-emerald-800 font-medium cursor-pointer"
+                                  className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-medium cursor-pointer"
                                 >
                                   Pegar (0)
                                 </button>
@@ -1310,7 +1252,7 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
                                     setCustomGaps((prev) => ({ ...prev, [gapKey]: 45 }));
                                     setEditingGapKey(null);
                                   }}
-                                  className="px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-800 font-medium cursor-pointer"
+                                  className="px-1.5 py-0.5 rounded text-[9px] bg-blue-100 hover:bg-blue-200 text-blue-800 font-medium cursor-pointer"
                                 >
                                   Columna (45)
                                 </button>
@@ -1322,47 +1264,160 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
                             className="cursor-pointer"
                             onClick={() => {
                               setEditingGapKey(gapKey);
-                              setGapInputValue(0);
+                              setGapInputValue(gapAfterCm);
                             }}
                             onDoubleClick={() => {
                               setCustomGaps((prev) => ({
                                 ...prev,
-                                [gapKey]: 45,
+                                [gapKey]: gapAfterCm === 0 ? 45 : 0,
                               }));
                             }}
                           >
-                            <title>Muros pegados (0 cm). Clic para editar cm. Doble clic para alternar con 45 cm.</title>
-                            <line y1={-24} y2={24} stroke="#10B981" strokeWidth="2.5" strokeDasharray="4,2" />
+                            <title>Separación de {gapAfterCm} cm. Clic para editar cm exactos. Doble clic para alternar con 0 cm.</title>
                             <rect
-                              x={-44}
-                              y={-10}
-                              width={88}
-                              height={20}
-                              rx={10}
-                              fill="#10B981"
-                              stroke="#FFFFFF"
-                              strokeWidth={1.2}
-                              className="shadow-xs hover:fill-emerald-600 transition-colors"
+                              x={-45}
+                              y={-12}
+                              width={90}
+                              height={24}
+                              rx={12}
+                              fill="#FFFFFF"
+                              stroke="#2563EB"
+                              strokeWidth="1.2"
+                              className="shadow-xs hover:fill-blue-50 transition-colors"
                             />
                             <text
                               x={0}
-                              y={3.5}
+                              y={4}
                               textAnchor="middle"
-                              fontSize="8.5"
-                              fontWeight="bold"
-                              fill="#FFFFFF"
-                              fontFamily="ui-sans-serif, system-ui, sans-serif"
+                              fontSize="9"
+                              fontWeight="600"
+                              fill="#2563EB"
+                              fontFamily="JetBrains Mono, monospace"
                             >
-                              Pegadas (0 cm)
+                              ⟷ {gapAfterCm} cm
                             </text>
                           </g>
                         )}
                       </g>
-                    ) : null;
-                  })()}
-                </g>
-              );
-            })}
+                    );
+                  }
+
+                  // Gap is 0 cm (walls are touching / "pegadas")
+                  return (
+                    <g key={`sep-${gapKey}`} transform={`translate(${seamXPx}, ${maxHPx / 2})`}>
+                      {isEditing ? (
+                        <foreignObject
+                          x={-75}
+                          y={-36}
+                          width={150}
+                          height={72}
+                          className="overflow-visible"
+                        >
+                          <div
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full h-full bg-white rounded-lg border-2 border-emerald-600 shadow-2xl p-1.5 flex flex-col items-center justify-between select-none"
+                          >
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                autoFocus
+                                min={0}
+                                max={300}
+                                step={5}
+                                value={gapInputValue}
+                                onChange={(e) => setGapInputValue(Number(e.target.value) || 0)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    setCustomGaps((prev) => ({ ...prev, [gapKey]: gapInputValue }));
+                                    setEditingGapKey(null);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingGapKey(null);
+                                  }
+                                }}
+                                className="w-14 text-center font-mono font-bold text-xs bg-[#F4F4F5] rounded border border-[#CBD5E1] p-0.5 outline-hidden"
+                              />
+                              <span className="text-[10px] text-[#525252]">cm</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomGaps((prev) => ({ ...prev, [gapKey]: gapInputValue }));
+                                  setEditingGapKey(null);
+                                }}
+                                className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold cursor-pointer"
+                              >
+                                ✓
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1 w-full justify-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomGaps((prev) => ({ ...prev, [gapKey]: 0 }));
+                                  setEditingGapKey(null);
+                                }}
+                                className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-medium cursor-pointer"
+                              >
+                                Pegar (0)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomGaps((prev) => ({ ...prev, [gapKey]: 45 }));
+                                  setEditingGapKey(null);
+                                }}
+                                className="px-1.5 py-0.5 rounded text-[9px] bg-blue-100 hover:bg-blue-200 text-blue-800 font-medium cursor-pointer"
+                              >
+                                Columna (45)
+                              </button>
+                            </div>
+                          </div>
+                        </foreignObject>
+                      ) : (
+                        <g
+                          className="cursor-pointer"
+                          onClick={() => {
+                            setEditingGapKey(gapKey);
+                            setGapInputValue(0);
+                          }}
+                          onDoubleClick={() => {
+                            setCustomGaps((prev) => ({
+                              ...prev,
+                              [gapKey]: 45,
+                            }));
+                          }}
+                        >
+                          <title>Muros pegados (0 cm). Clic para editar cm. Doble clic para alternar con 45 cm.</title>
+                          <line y1={-24} y2={24} stroke="#10B981" strokeWidth="2.5" strokeDasharray="4,2" />
+                          <rect
+                            x={-44}
+                            y={-10}
+                            width={88}
+                            height={20}
+                            rx={10}
+                            fill="#10B981"
+                            stroke="#FFFFFF"
+                            strokeWidth={1.2}
+                            className="shadow-xs hover:fill-emerald-600 transition-colors"
+                          />
+                          <text
+                            x={0}
+                            y={3.5}
+                            textAnchor="middle"
+                            fontSize="8.5"
+                            fontWeight="bold"
+                            fill="#FFFFFF"
+                            fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          >
+                            Pegadas (0 cm)
+                          </text>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            )}
           </g>
         </svg>
 
@@ -1372,9 +1427,7 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/95 border border-[#E6E4DD] text-xs text-[#171717] shadow-md backdrop-blur-xs"
         >
           <button
-            onClick={() =>
-              setZoom((z) => Math.max(0.2, Number((z - 0.08).toFixed(2))))
-            }
+            onClick={() => handleButtonZoom(-0.08)}
             title="Alejar"
             className="p-1 rounded hover:bg-[#FAF8F5] text-[#737373] hover:text-[#171717] cursor-pointer"
           >
@@ -1386,9 +1439,7 @@ export const MultiWallElevationCanvas: React.FC<MultiWallElevationCanvasProps> =
           </span>
 
           <button
-            onClick={() =>
-              setZoom((z) => Math.min(2.5, Number((z + 0.08).toFixed(2))))
-            }
+            onClick={() => handleButtonZoom(0.08)}
             title="Acercar"
             className="p-1 rounded hover:bg-[#FAF8F5] text-[#737373] hover:text-[#171717] cursor-pointer"
           >

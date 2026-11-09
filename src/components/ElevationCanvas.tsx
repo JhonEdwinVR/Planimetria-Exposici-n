@@ -62,6 +62,7 @@ import {
   groupWallItems,
   ungroupWallItems,
 } from '../utils/geometryAndValidation';
+import { getLinkedWall, isWallFaceB } from '../utils/wallHelpers';
 
 export type WallFilterMode = 'with_artworks' | 'with_content' | 'all';
 
@@ -319,25 +320,10 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
     return map;
   }, [allWalls, items]);
 
-  // Helper to find linked counterpart wall (opposite face)
-  const getLinkedWall = React.useCallback(
-    (w: Wall): Wall | undefined => {
-      return allWalls.find(
-        (other) =>
-          other.id !== w.id &&
-          (other.id === w.linkedWallId ||
-            w.linkedWallId === other.id ||
-            (other.startVertexId === w.startVertexId &&
-              other.endVertexId === w.endVertexId))
-      );
-    },
-    [allWalls]
-  );
-
-  // Identify current wall's linked counterpart
+  // Identify current wall's linked counterpart (opposite face)
   const currentLinkedWall = React.useMemo(
-    () => getLinkedWall(wall),
-    [wall, getLinkedWall]
+    () => getLinkedWall(wall, allWalls),
+    [wall, allWalls]
   );
 
   // Identify all walls belonging to current participant that have artworks or active content
@@ -373,7 +359,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
 
     allWalls.forEach((w) => {
       if (visited.has(w.id)) return;
-      const linked = getLinkedWall(w);
+      const linked = getLinkedWall(w, allWalls);
       const partitionKey = linked
         ? [w.id, linked.id].sort().join('::')
         : w.id;
@@ -400,7 +386,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
     });
 
     return list;
-  }, [allWalls, getLinkedWall, zonesMap, wallStatsMap]);
+  }, [allWalls, zonesMap, wallStatsMap]);
 
   // Overall partition counts for review mode tabs
   const partitionCounts = React.useMemo(() => {
@@ -551,10 +537,33 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     const delta = e.deltaY < 0 ? 0.08 : -0.08;
-    setZoom((z) =>
-      Math.min(2.5, Math.max(0.3, Number((z + delta).toFixed(2))))
-    );
+    const nextZoom = Math.min(2.5, Math.max(0.3, Number((zoom + delta).toFixed(2))));
+    // Anchor zoom to cursor position so the point under the mouse stays fixed
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const scale = nextZoom / zoom;
+    setPan((prev) => ({
+      x: Math.round(mouseX - (mouseX - prev.x) * scale),
+      y: Math.round(mouseY - (mouseY - prev.y) * scale),
+    }));
+    setZoom(nextZoom);
+  };
+
+  const handleButtonZoom = (delta: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const nextZoom = Math.min(2.5, Math.max(0.3, Number((zoom + delta).toFixed(2))));
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const scale = nextZoom / zoom;
+    setPan((prev) => ({
+      x: Math.round(centerX - (centerX - prev.x) * scale),
+      y: Math.round(centerY - (centerY - prev.y) * scale),
+    }));
+    setZoom(nextZoom);
   };
 
   // Cancel placement on Escape key
@@ -923,6 +932,18 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
     setIsMarqueeActive(false);
     setMarquee(null);
   };
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      setIsPanning(false);
+      setDragState(null);
+      setActiveGuides([]);
+      setIsMarqueeActive(false);
+      setMarquee(null);
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -1445,21 +1466,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
 
   return (
     <div
-      ref={containerRef}
-      onWheel={handleWheel}
-      onMouseDown={handleMouseDownCanvas}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-      className={`relative flex-1 h-full overflow-hidden bg-[#FAF8F5] select-none flex flex-col ${
-        isSpacePressed
-          ? isPanning
-            ? 'cursor-grabbing'
-            : 'cursor-grab'
-          : 'cursor-default'
-      }`}
+      className="relative flex-1 h-full overflow-hidden bg-[#FAF8F5] select-none flex flex-col"
     >
       {/* Minimalist Sub-Header for Elevation View */}
       {!isPresentationMode && (
@@ -1586,14 +1593,14 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
             {currentLinkedWall && (
               <div className="flex items-center bg-[#EFECE6] p-0.5 rounded text-[11px] gap-0.5">
                 {(() => {
-                  const isSecondFace = wall.id === currentLinkedWall.id;
-                  const firstWall = isSecondFace ? currentLinkedWall : wall;
-                  const secondWall = isSecondFace ? wall : currentLinkedWall;
-                  const statsFirst = wallStatsMap.get(firstWall.id) || {
+                  const currentIsFaceB = isWallFaceB(wall, currentLinkedWall);
+                  const wallA = currentIsFaceB ? currentLinkedWall : wall;
+                  const wallB = currentIsFaceB ? wall : currentLinkedWall;
+                  const statsA = wallStatsMap.get(wallA.id) || {
                     artworks: 0,
                     content: 0,
                   };
-                  const statsSecond = wallStatsMap.get(secondWall.id) || {
+                  const statsB = wallStatsMap.get(wallB.id) || {
                     artworks: 0,
                     content: 0,
                   };
@@ -1602,27 +1609,27 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
                     <>
                       <button
                         type="button"
-                        onClick={() => onSwitchWall(firstWall.id)}
+                        onClick={() => onSwitchWall(wallA.id)}
                         className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                          !isSecondFace
+                          !currentIsFaceB
                             ? 'bg-white text-[#2563EB] font-semibold shadow-xs'
                             : 'text-[#737373] hover:text-[#171717]'
                         }`}
-                        title={`Cara A: ${firstWall.participant || firstWall.name}`}
+                        title={`Cara A: ${wallA.participant || wallA.name}`}
                       >
-                        Cara A ({statsFirst.artworks} obr.)
+                        Cara A ({statsA.artworks} obr.)
                       </button>
                       <button
                         type="button"
-                        onClick={() => onSwitchWall(secondWall.id)}
+                        onClick={() => onSwitchWall(wallB.id)}
                         className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                          isSecondFace
+                          currentIsFaceB
                             ? 'bg-white text-[#2563EB] font-semibold shadow-xs'
                             : 'text-[#737373] hover:text-[#171717]'
                         }`}
-                        title={`Cara B: ${secondWall.participant || secondWall.name}`}
+                        title={`Cara B: ${wallB.participant || wallB.name}`}
                       >
-                        Cara B ({statsSecond.artworks} obr.)
+                        Cara B ({statsB.artworks} obr.)
                       </button>
                     </>
                   );
@@ -2073,7 +2080,23 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
       )}
 
       {/* MAIN ELEVATION SVG */}
-      <div className="relative flex-1 overflow-hidden z-10">
+      <div
+        ref={containerRef}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDownCanvas}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className={`relative flex-1 overflow-hidden z-10 ${
+          isSpacePressed
+            ? isPanning
+              ? 'cursor-grabbing'
+              : 'cursor-grab'
+            : 'cursor-default'
+        }`}
+      >
         {/* Empty state when no walls match the review filter */}
         {filteredPartitions.length === 0 && (
           <div className="absolute inset-0 z-30 bg-[#FAF8F5]/90 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center">
@@ -3427,9 +3450,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2 py-1 rounded bg-white/95 border border-[#E6E4DD] text-xs text-[#171717] shadow-sm"
         >
           <button
-            onClick={() =>
-              setZoom((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))))
-            }
+            onClick={() => handleButtonZoom(-0.1)}
             title="Alejar"
             className="p-1 rounded hover:bg-[#FAF8F5] text-[#737373] hover:text-[#171717] cursor-pointer"
           >
@@ -3441,9 +3462,7 @@ export const ElevationCanvas: React.FC<ElevationCanvasProps> = ({
           </span>
 
           <button
-            onClick={() =>
-              setZoom((z) => Math.min(2.5, Number((z + 0.1).toFixed(2))))
-            }
+            onClick={() => handleButtonZoom(0.1)}
             title="Acercar"
             className="p-1 rounded hover:bg-[#FAF8F5] text-[#737373] hover:text-[#171717] cursor-pointer"
           >

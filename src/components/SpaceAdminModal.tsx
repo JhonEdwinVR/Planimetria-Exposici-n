@@ -27,6 +27,7 @@ import {
   Square,
 } from 'lucide-react';
 import { Wall, WallItem, Zone } from '../types/exhibition';
+import { getLinkedWall } from '../utils/wallHelpers';
 
 interface SpaceAdminModalProps {
   isOpen: boolean;
@@ -480,14 +481,7 @@ export const SpaceAdminModal: React.FC<SpaceAdminModalProps> = ({
                     const isVano = wall.thicknessCm === 0 || wall.name.toLowerCase().includes('vano') || wall.name.toLowerCase().includes('acceso');
                     const isSelected = selectedWallIds.includes(wall.id);
 
-                    const linkedWall = walls.find(
-                      (w) =>
-                        w.id !== wall.id &&
-                        (w.id === wall.linkedWallId ||
-                          w.linkedWallId === wall.id ||
-                          (w.startVertexId === wall.startVertexId &&
-                            w.endVertexId === wall.endVertexId))
-                    );
+                    const linkedWall = getLinkedWall(wall, walls);
                     const otherZoneId =
                       linkedWall?.zoneId ||
                       (wall.secondaryZoneId !== zone.id
